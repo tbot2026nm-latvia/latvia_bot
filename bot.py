@@ -4,12 +4,7 @@ import aiohttp
 from aiogram import Bot, Dispatcher, types
 from aiogram.utils import executor
 
-# =====================
-# ENV
-# =====================
-
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-URL_TO_MONITOR = os.getenv("URL_TO_MONITOR")
 
 if not BOT_TOKEN:
     print("❌ BOT_TOKEN topilmadi")
@@ -25,6 +20,15 @@ dp = Dispatcher(bot)
 subscribers = set()
 
 # =====================
+# MONITOR SETTINGS
+# =====================
+
+URL_TO_MONITOR = "https://example.com"  # hozircha test
+CHECK_INTERVAL = 60  # sekund
+
+_last_content = None
+
+# =====================
 # COMMANDS
 # =====================
 
@@ -34,8 +38,7 @@ async def start(message: types.Message):
         "Assalomu alaykum!\n\n"
         "Bu monitoring bot.\n\n"
         "/subscribe — obuna bo‘lish\n"
-        "/unsubscribe — chiqish\n"
-        "/status — holatni tekshirish"
+        "/unsubscribe — chiqish"
     )
 
 @dp.message_handler(commands=["subscribe"])
@@ -48,35 +51,43 @@ async def unsubscribe(message: types.Message):
     subscribers.discard(message.chat.id)
     await message.answer("Siz ro‘yxatdan chiqdingiz ❌")
 
-@dp.message_handler(commands=["status"])
-async def status(message: types.Message):
-    await message.answer("✅ Bot ishlayapti")
-
 # =====================
-# MONITOR (HOZIRCHA PASSIV)
+# MONITOR FUNCTION
 # =====================
 
 async def monitor():
-    if not URL_TO_MONITOR:
-        print("⚠️ URL_TO_MONITOR berilmagan")
-        return
+    global _last_content
+    await bot.wait_until_ready()
 
     print(f"👀 Monitoring boshlandi: {URL_TO_MONITOR}")
 
-    async with aiohttp.ClientSession() as session:
-        while True:
-            try:
-                async with session.get(URL_TO_MONITOR) as resp:
-                    print("🔎 Tekshirildi:", resp.status)
-            except Exception as e:
-                print("❌ Xato:", e)
+    while True:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(URL_TO_MONITOR, timeout=15) as resp:
+                    text = await resp.text()
 
-            await asyncio.sleep(60)
+            if _last_content and text != _last_content:
+                for user_id in subscribers:
+                    await bot.send_message(
+                        user_id,
+                        "⚠️ Saytda o‘zgarish aniqlandi!"
+                    )
+
+            _last_content = text
+
+        except Exception as e:
+            print("Monitoring xato:", e)
+
+        await asyncio.sleep(CHECK_INTERVAL)
 
 # =====================
-# MAIN
+# START
 # =====================
+
+async def on_startup(dp):
+    asyncio.create_task(monitor())
 
 if __name__ == "__main__":
     print("✅ BOT ISHGA TUSHDI")
-    executor.start_polling(dp, skip_updates=True)
+    executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
