@@ -1,8 +1,11 @@
 import os
+import asyncio
+import aiohttp
 from aiogram import Bot, Dispatcher, types
 from aiogram.utils import executor
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+URL_TO_MONITOR = os.getenv("URL_TO_MONITOR")
 
 if not BOT_TOKEN:
     print("❌ BOT_TOKEN topilmadi")
@@ -32,6 +35,34 @@ async def unsubscribe(message: types.Message):
     subscribers.discard(message.from_user.id)
     await message.answer("Siz ro‘yxatdan chiqdingiz ❌")
 
-if __name__ == "__main__":
+async def monitor():
+    if not URL_TO_MONITOR:
+        print("⚠️ URL_TO_MONITOR berilmagan")
+        return
+
+    print(f"🔍 Monitoring boshlandi: {URL_TO_MONITOR}")
+
+    async with aiohttp.ClientSession() as session:
+        while True:
+            try:
+                async with session.get(URL_TO_MONITOR, timeout=10) as resp:
+                    if resp.status != 200:
+                        for user_id in subscribers:
+                            await bot.send_message(
+                                user_id,
+                                f"⚠️ Sayt ishlamayapti!\nStatus: {resp.status}"
+                            )
+            except Exception as e:
+                for user_id in subscribers:
+                    await bot.send_message(
+                        user_id,
+                        f"❌ Saytga ulanib bo‘lmadi:\n{e}"
+                    )
+            await asyncio.sleep(60)  # 1 daqiqa
+
+async def on_startup(dp):
     print("✅ BOT ISHGA TUSHDI")
-    executor.start_polling(dp, skip_updates=True)
+    asyncio.create_task(monitor())
+
+if __name__ == "__main__":
+    executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
