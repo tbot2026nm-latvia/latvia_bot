@@ -57,7 +57,7 @@ async def unsubscribe(message: types.Message):
 
     @dp.message_handler(commands=["status"])
 async def status(message: types.Message):
-    monitoring_status = "YOQILGAN ✅" if URL_TO_MONITOR else "O‘CHIQ ❌"
+    monitoring_status = ("YOQILGAN ✅" if URL_TO_MONITOR else "O‘CHIQ ❌")
 
     await message.answer(
         "📊 BOT HOLATI\n\n"
