@@ -1,45 +1,37 @@
-import asyncio
-from aiogram import Bot, Dispatcher
-from aiogram.types import Message
-from aiogram.filters import Command
 import os
+from aiogram import Bot, Dispatcher, types
+from aiogram.utils import executor
 
-API_TOKEN = os.getenv("BOT_TOKEN")  # Serverga tokenni environment variable sifatida qo'yamiz
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-bot = Bot(token=API_TOKEN)
-dp = Dispatcher()
+if not BOT_TOKEN:
+    print("❌ BOT_TOKEN topilmadi")
+    exit(1)
+
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher(bot)
 
 subscribers = set()
 
-@dp.message(Command("start"))
-async def start(m: Message):
-    await m.answer(
+@dp.message_handler(commands=["start"])
+async def start(message: types.Message):
+    await message.answer(
         "Assalomu alaykum!\n"
-        "Latviya vizosi uchun VFS navbat kuzatuvchi bot.\n\n"
-        "➕ Kuzatishga qo‘shilish: /subscribe\n"
-        "➖ Ro‘yxatdan chiqish: /unsubscribe"
+        "Bu test bot.\n\n"
+        "/subscribe — obuna bo‘lish\n"
+        "/unsubscribe — chiqish"
     )
 
-@dp.message(Command("subscribe"))
-async def subscribe(m: Message):
-    subscribers.add(m.from_user.id)
-    await m.answer("Siz kuzatuvchilar ro‘yxatiga qo‘shildingiz.")
+@dp.message_handler(commands=["subscribe"])
+async def subscribe(message: types.Message):
+    subscribers.add(message.from_user.id)
+    await message.answer("Siz kuzatuvga qo‘shildingiz ✅")
 
-@dp.message(Command("unsubscribe"))
-async def unsubscribe(m: Message):
-    subscribers.discard(m.from_user.id)
-    await m.answer("Siz ro'yxatdan o'chirildingiz.")
-
-async def notify_all(text: str):
-    for uid in list(subscribers):
-        try:
-            await bot.send_message(uid, text)
-        except:
-            pass
-
-async def main():
-    print("BOT ishga tushdi...")
-    await dp.start_polling(bot)
+@dp.message_handler(commands=["unsubscribe"])
+async def unsubscribe(message: types.Message):
+    subscribers.discard(message.from_user.id)
+    await message.answer("Siz ro‘yxatdan chiqdingiz ❌")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    print("✅ BOT ISHGA TUSHDI")
+    executor.start_polling(dp, skip_updates=True)
