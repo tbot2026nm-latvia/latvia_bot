@@ -55,6 +55,17 @@ async def unsubscribe(message: types.Message):
     subscribers.discard(message.chat.id)
     await message.answer("Siz ro‘yxatdan chiqdingiz ❌")
 
+    @dp.message_handler(commands=["status"])
+async def status(message: types.Message):
+    monitoring_status = "YOQILGAN ✅" if URL_TO_MONITOR else "O‘CHIQ ❌"
+
+    await message.answer(
+        "📊 BOT HOLATI\n\n"
+        f"🤖 Bot: ISHLAYAPTI\n"
+        f"🔍 Monitoring: {monitoring_status}\n"
+        f"👥 Obunachilar: {len(subscribers)} ta"
+    )
+
 # =====================
 # MONITOR
 # =====================
