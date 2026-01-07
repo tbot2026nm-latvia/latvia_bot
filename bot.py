@@ -8,10 +8,6 @@ from aiogram.types import (
 )
 from aiogram.utils import executor
 
-# =====================
-# CONFIG
-# =====================
-
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 if not BOT_TOKEN:
@@ -24,20 +20,19 @@ dp = Dispatcher(bot)
 # =====================
 # STORAGE
 # =====================
-
-user_data = {}  # user_id -> data
+user_data = {}
 
 # =====================
-# /START + RULES
+# /START
 # =====================
-
 @dp.message_handler(commands=["start"])
 async def start(message: types.Message):
     text = (
         "🔐 *XAVFSIZLIK VA FOYDALANISH QOIDALARI*\n\n"
-        "• Bot rasmiy davlat yoki VFS tizimi emas\n"
+        "• Bot rasmiy tizim emas\n"
         "• Login/parol so‘ramaydi\n"
-        "• Ma’lumotlar faqat navbatni kuzatish uchun olinadi\n\n"
+        "• Uchinchi shaxsga oshkor etilmaydi\n"
+        "• Ma’lumotlar faqat kuzatuv uchun\n\n"
         "Davom etish uchun rozilik bildiring 👇"
     )
 
@@ -52,7 +47,6 @@ async def start(message: types.Message):
 # =====================
 # AGREEMENT
 # =====================
-
 @dp.callback_query_handler(lambda c: c.data == "agree")
 async def agree(callback: types.CallbackQuery):
     uid = callback.from_user.id
@@ -66,12 +60,14 @@ async def decline(callback: types.CallbackQuery):
     await callback.answer()
 
 # =====================
-# TEXT REGISTRATION (ISM / FAMILIYA)
+# TEXT HANDLER (FAQAT TEXT)
 # =====================
-
-@dp.message_handler(lambda m: m.from_user.id in user_data)
-async def text_steps(message: types.Message):
+@dp.message_handler(content_types=types.ContentType.TEXT)
+async def handle_text(message: types.Message):
     uid = message.from_user.id
+    if uid not in user_data:
+        return
+
     step = user_data[uid].get("step")
 
     if step == "first_name":
@@ -93,20 +89,18 @@ async def text_steps(message: types.Message):
         )
 
         await message.answer(
-            "📱 Telefon raqamingizni *Telegram orqali* yuboring:",
+            "📱 Telefon raqamingizni *tugma orqali* yuboring:",
             parse_mode="Markdown",
             reply_markup=kb
         )
         return
 
 # =====================
-# PHONE (CONTACT) — ALOHIDA HANDLER
+# PHONE HANDLER (CONTACT)
 # =====================
-
 @dp.message_handler(content_types=types.ContentType.CONTACT)
-async def handle_phone(message: types.Message):
+async def handle_contact(message: types.Message):
     uid = message.from_user.id
-
     if uid not in user_data:
         return
 
@@ -120,18 +114,16 @@ async def handle_phone(message: types.Message):
         "🛂 Pasportingizni yuboring:\n\n"
         "• JPG format\n"
         "• 1 MB dan oshmasin\n"
-        "• Asosiy sahifa aniq ko‘rinsin",
+        "• Aniq ko‘rinsin",
         reply_markup=types.ReplyKeyboardRemove()
     )
 
 # =====================
-# PASSPORT (PHOTO)
+# PASSPORT HANDLER
 # =====================
-
 @dp.message_handler(content_types=types.ContentType.PHOTO)
 async def handle_passport(message: types.Message):
     uid = message.from_user.id
-
     if uid not in user_data:
         return
 
@@ -139,12 +131,11 @@ async def handle_passport(message: types.Message):
         return
 
     photo = message.photo[-1]
-
     if photo.file_size > 1_000_000:
-        await message.answer("❌ Rasm hajmi 1 MB dan katta. Qayta yuboring.")
+        await message.answer("❌ Rasm 1 MB dan katta. Qayta yuboring.")
         return
 
-    user_data[uid]["passport_file_id"] = photo.file_id
+    user_data[uid]["passport"] = photo.file_id
     user_data[uid]["step"] = "done"
 
     await message.answer(
@@ -155,66 +146,41 @@ async def handle_passport(message: types.Message):
     )
 
 # =====================
-# MODERN CLASSIC MENU
+# MENU
 # =====================
-
 def main_menu():
-    menu = InlineKeyboardMarkup(row_width=2)
-    menu.add(
+    kb = InlineKeyboardMarkup(row_width=2)
+    kb.add(
         InlineKeyboardButton("🟧 📊 Navbat holati", callback_data="queue"),
         InlineKeyboardButton("🟩 📅 Taxminiy sana", callback_data="date"),
         InlineKeyboardButton("🟧 🔔 Kuzatuv holati", callback_data="monitor"),
         InlineKeyboardButton("🟩 👤 Mening ma’lumotlarim", callback_data="profile"),
     )
-    menu.add(
-        InlineKeyboardButton("⚙️ Yordam", callback_data="help")
-    )
-    return menu
+    kb.add(InlineKeyboardButton("⚙️ Yordam", callback_data="help"))
+    return kb
 
 # =====================
-# MENU ACTIONS
+# MENU CALLBACKS
 # =====================
-
-@dp.callback_query_handler(lambda c: c.data == "queue")
-async def queue_status(callback: types.CallbackQuery):
-    await callback.message.answer("📊 Navbat holati: *hisoblanmoqda*")
-    await callback.answer()
-
-@dp.callback_query_handler(lambda c: c.data == "date")
-async def expected_date(callback: types.CallbackQuery):
-    await callback.message.answer("📅 Taxminiy sana: *aniqlanmoqda*")
-    await callback.answer()
-
-@dp.callback_query_handler(lambda c: c.data == "monitor")
-async def monitor_status(callback: types.CallbackQuery):
-    await callback.message.answer("🔔 Kuzatuv faol")
-    await callback.answer()
-
 @dp.callback_query_handler(lambda c: c.data == "profile")
 async def profile(callback: types.CallbackQuery):
-    data = user_data.get(callback.from_user.id, {})
-    text = (
-        "👤 *Sizning ma’lumotlaringiz*\n\n"
-        f"Ism: {data.get('first_name')}\n"
-        f"Familiya: {data.get('last_name')}\n"
-        f"Telefon: {data.get('phone')}"
+    d = user_data.get(callback.from_user.id, {})
+    await callback.message.answer(
+        f"👤 Profil\n\n"
+        f"Ism: {d.get('first_name')}\n"
+        f"Familiya: {d.get('last_name')}\n"
+        f"Telefon: {d.get('phone')}"
     )
-    await callback.message.answer(text, parse_mode="Markdown")
     await callback.answer()
 
 @dp.callback_query_handler(lambda c: c.data == "help")
 async def help_menu(callback: types.CallbackQuery):
-    await callback.message.answer(
-        "ℹ️ Yordam:\n\n"
-        "Bot navbatni avtomatik band qilmaydi.\n"
-        "Faqat xabardor qilish uchun xizmat qiladi."
-    )
+    await callback.message.answer("ℹ️ Yordam bo‘limi")
     await callback.answer()
 
 # =====================
-# RUN BOT
+# RUN
 # =====================
-
 if __name__ == "__main__":
     print("✅ BOT ISHGA TUSHDI")
     executor.start_polling(dp, skip_updates=True)
