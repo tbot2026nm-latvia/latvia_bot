@@ -1,33 +1,45 @@
 import os
 import asyncio
-import hashlib
 import aiohttp
-from datetime import datetime
-
 from aiogram import Bot, Dispatcher, types
 from aiogram.utils import executor
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+
+# =====================
+# CONFIG
+# =====================
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-URL_TO_MONITOR = os.getenv("URL_TO_MONITOR")
-CHECK_INTERVAL = 60
+
+CHECK_URL = "https://visa.vfsglobal.com/uzb/ru/lva/book-an-appointment"
+CHECK_INTERVAL = 90  # soniya
 
 if not BOT_TOKEN:
     print("❌ BOT_TOKEN topilmadi")
     exit(1)
 
+# =====================
+# BOT INIT
+# =====================
+
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 
 # =====================
-# DATA (hozircha xotirada)
+# STORAGE (oddiy, RAM)
 # =====================
 
-users = {}        # chat_id -> {name, phone}
+users = {}        # user_id -> data
 subscribers = set()
-_last_hash = None
-_initialized = False
-waiting_for_name = set()
-waiting_for_phone = set()
+
+# =====================
+# KEYBOARDS
+# =====================
+
+contact_kb = ReplyKeyboardMarkup(resize_keyboard=True)
+contact_kb.add(
+    KeyboardButton("📞 Telefon raqamni yuborish", request_contact=True)
+)
 
 # =====================
 # START
@@ -35,120 +47,70 @@ waiting_for_phone = set()
 
 @dp.message_handler(commands=["start"])
 async def start(message: types.Message):
-    chat_id = message.chat.id
-
-    if chat_id in users:
-        await message.answer(
-            "Siz allaqachon ro‘yxatdan o‘tgansiz ✅\n\n"
-            "/subscribe — kuzatuvga qo‘shilish\n"
-            "/unsubscribe — chiqish"
-        )
-        return
-
-    waiting_for_name.add(chat_id)
-    await message.answer("Iltimos, ism va familiyangizni kiriting:")
+    users[message.from_user.id] = {}
+    await message.answer("👋 Ismingizni kiriting:")
 
 # =====================
-# NAME INPUT
+# REGISTRATION FLOW
 # =====================
 
-@dp.message_handler(lambda m: m.chat.id in waiting_for_name, content_types=types.ContentTypes.TEXT)
+@dp.message_handler(lambda m: m.from_user.id in users and "name" not in users[m.from_user.id])
 async def get_name(message: types.Message):
-    chat_id = message.chat.id
-    name = message.text.strip()
+    users[message.from_user.id]["name"] = message.text
+    await message.answer("👤 Familiyangizni kiriting:")
 
-    users[chat_id] = {"name": name}
-    waiting_for_name.remove(chat_id)
-    waiting_for_phone.add(chat_id)
-
-    kb = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    kb.add(types.KeyboardButton("📞 Telefon raqamni yuborish", request_contact=True))
-
+@dp.message_handler(lambda m: m.from_user.id in users and "surname" not in users[m.from_user.id])
+async def get_surname(message: types.Message):
+    users[message.from_user.id]["surname"] = message.text
     await message.answer(
-        f"Rahmat, {name}.\nEndi telefon raqamingizni yuboring:",
-        reply_markup=kb
+        "📞 Telefon raqamingizni yuboring:",
+        reply_markup=contact_kb
     )
 
-# =====================
-# PHONE INPUT
-# =====================
-
-@dp.message_handler(lambda m: m.chat.id in waiting_for_phone, content_types=types.ContentTypes.CONTACT)
-async def get_phone(message: types.Message):
-    chat_id = message.chat.id
-    phone = message.contact.phone_number
-
-    users[chat_id]["phone"] = phone
-    waiting_for_phone.remove(chat_id)
+@dp.message_handler(content_types=types.ContentType.CONTACT)
+async def get_contact(message: types.Message):
+    uid = message.from_user.id
+    users[uid]["phone"] = message.contact.phone_number
+    subscribers.add(uid)
 
     await message.answer(
-        "✅ Ro‘yxatdan muvaffaqiyatli o‘tdingiz!\n\n"
-        "/subscribe — kuzatuvga qo‘shilish",
+        "✅ Siz muvaffaqiyatli ro‘yxatdan o‘tdingiz!\n\n"
+        "🔔 Endi slot ochilishi avtomatik kuzatiladi.",
         reply_markup=types.ReplyKeyboardRemove()
     )
 
 # =====================
-# SUBSCRIBE
-# =====================
-
-@dp.message_handler(commands=["subscribe"])
-async def subscribe(message: types.Message):
-    chat_id = message.chat.id
-
-    if chat_id not in users:
-        await message.answer("❌ Avval ro‘yxatdan o‘ting: /start")
-        return
-
-    subscribers.add(chat_id)
-    await message.answer("Siz kuzatuvga qo‘shildingiz ✅")
-
-@dp.message_handler(commands=["unsubscribe"])
-async def unsubscribe(message: types.Message):
-    subscribers.discard(message.chat.id)
-    await message.answer("Siz kuzatuvdan chiqdingiz ❌")
-
-# =====================
-# MONITOR
+# MONITORING
 # =====================
 
 async def monitor():
-    global _last_hash, _initialized
-
-    if not URL_TO_MONITOR:
-        return
-
-    print(f"👀 Monitoring boshlandi: {URL_TO_MONITOR}")
+    await asyncio.sleep(10)
+    print(f"👀 Monitoring boshlandi: {CHECK_URL}")
 
     async with aiohttp.ClientSession() as session:
         while True:
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             try:
-                async with session.get(URL_TO_MONITOR, timeout=20) as resp:
-                    text = await resp.text()
-                    status = resp.status
+                async with session.get(CHECK_URL, allow_redirects=False) as resp:
+                    location = resp.headers.get("Location", "")
 
-                current_hash = hashlib.md5(text.encode()).hexdigest()
+                    # Agar login sahifaga tashlamasa → SLOT BOR
+                    if "login" not in location.lower():
+                        print("🚨 SLOT OCHILDI!")
 
-                if not _initialized:
-                    _last_hash = current_hash
-                    _initialized = True
-                else:
-                    if current_hash != _last_hash:
-                        for user_id in subscribers:
-                            await bot.send_message(
-                                user_id,
-                                f"⚠️ Saytda o‘zgarish aniqlandi!\n"
-                                f"📡 Status: {status}\n"
-                                f"⏰ Vaqt: {now}"
-                            )
-                        _last_hash = current_hash
+                        for uid in subscribers:
+                            try:
+                                await bot.send_message(
+                                    uid,
+                                    "🚨 SLOT OCHILDI!\n\n"
+                                    "👉 Tezda saytga kiring:\n"
+                                    "https://visa.vfsglobal.com/uzb/ru/lva/book-an-appointment"
+                                )
+                            except:
+                                pass
 
+                        await asyncio.sleep(600)  # spam bo‘lmasin
             except Exception as e:
-                for user_id in subscribers:
-                    await bot.send_message(
-                        user_id,
-                        f"❌ Monitoring xatosi\n⏰ {now}\n{e}"
-                    )
+                print("Monitoring error:", e)
 
             await asyncio.sleep(CHECK_INTERVAL)
 
@@ -157,8 +119,8 @@ async def monitor():
 # =====================
 
 async def on_startup(dp):
-    print("✅ BOT ISHGA TUSHDI")
     asyncio.create_task(monitor())
 
 if __name__ == "__main__":
+    print("✅ BOT ISHGA TUSHDI")
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
