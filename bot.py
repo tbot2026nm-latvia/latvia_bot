@@ -1,14 +1,12 @@
 import os
-import asyncio
-from datetime import datetime, timedelta
-
 from aiogram import Bot, Dispatcher, types
+from aiogram.types import (
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    ReplyKeyboardMarkup,
+    KeyboardButton
+)
 from aiogram.utils import executor
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-
-# =====================
-# CONFIG
-# =====================
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
@@ -19,192 +17,155 @@ if not BOT_TOKEN:
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 
-# =====================
-# STORAGE (oddiy xotira)
-# =====================
+# =========================
+# USER STATES (oddiy usul)
+# =========================
+user_data = {}
 
-users = {}  # chat_id -> data
-
-# =====================
-# KEYBOARDS
-# =====================
-
-agree_kb = ReplyKeyboardMarkup(resize_keyboard=True)
-agree_kb.add(KeyboardButton("✅ Roziman"))
-
-menu = ReplyKeyboardMarkup(resize_keyboard=True)
-menu.add(
-    KeyboardButton("📅 Qabul sanasini kiritish"),
-    KeyboardButton("⏰ Mening eslatmalarim"),
-)
-menu.add(
-    KeyboardButton("📄 Hujjatlar ro‘yxati"),
-    KeyboardButton("ℹ️ Qanday ishlaydi?"),
-)
-menu.add(
-    KeyboardButton("❌ Kuzatuvni bekor qilish"),
-)
-
-skip_kb = ReplyKeyboardMarkup(resize_keyboard=True)
-skip_kb.add(KeyboardButton("➡️ O‘tkazib yuborish"))
-
-# =====================
-# START
-# =====================
-
+# =========================
+# START / RULES
+# =========================
 @dp.message_handler(commands=["start"])
 async def start(message: types.Message):
-    users[message.chat.id] = {"step": "agree"}
-    await message.answer(
-        "🔐 XAVFSIZLIK VA TARTIB-QOIDALAR\n\n"
-        "• Bot rasmiy VFS yoki elchixona EMAS\n"
-        "• Login/parol so‘RAMAYDI\n"
-        "• Bot navbat band qilmaydi\n"
-        "• Ma’lumotlar faqat eslatma uchun ishlatiladi\n\n"
-        "Davom etish uchun rozilik bildiring:",
-        reply_markup=agree_kb
+    text = (
+        "🔐 *XAVFSIZLIK VA FOYDALANISH QOIDALARI*\n\n"
+        "• Ushbu bot faqat xabardor qilish uchun xizmat qiladi\n"
+        "• Noto‘g‘ri ma’lumot kiritish javobgarligi foydalanuvchiga tegishli\n"
+        "• Pasport ma’lumotlari faqat tekshiruv uchun ishlatiladi\n\n"
+        "Davom etish uchun rozilik bildiring 👇"
     )
 
-# =====================
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(
+        InlineKeyboardButton("✅ Roziman", callback_data="agree"),
+        InlineKeyboardButton("❌ Rad etaman", callback_data="decline")
+    )
+
+    await message.answer(text, parse_mode="Markdown", reply_markup=keyboard)
+
+# =========================
 # AGREEMENT
-# =====================
+# =========================
+@dp.callback_query_handler(lambda c: c.data == "agree")
+async def agree(callback: types.CallbackQuery):
+    user_data[callback.from_user.id] = {}
+    await callback.message.answer("✍️ Ismingizni kiriting:")
+    user_data[callback.from_user.id]["step"] = "first_name"
 
-@dp.message_handler(text="✅ Roziman")
-async def agree(message: types.Message):
-    users[message.chat.id]["step"] = "first_name"
-    await message.answer("Ismingizni kiriting:")
+@dp.callback_query_handler(lambda c: c.data == "decline")
+async def decline(callback: types.CallbackQuery):
+    await callback.message.answer("❌ Roziliksiz botdan foydalanib bo‘lmaydi.")
+    await callback.answer()
 
-# =====================
-# REGISTRATION FLOW
-# =====================
-
-@dp.message_handler(lambda m: m.chat.id in users)
+# =========================
+# REGISTRATION STEPS
+# =========================
+@dp.message_handler(lambda m: m.from_user.id in user_data)
 async def registration(message: types.Message):
-    user = users[message.chat.id]
+    uid = message.from_user.id
+    step = user_data[uid].get("step")
 
-    if user.get("step") == "first_name":
-        user["first_name"] = message.text
-        user["step"] = "last_name"
-        await message.answer("Familiyangizni kiriting:")
-        return
+    if step == "first_name":
+        user_data[uid]["first_name"] = message.text
+        user_data[uid]["step"] = "last_name"
+        await message.answer("✍️ Familiyangizni kiriting:")
 
-    if user.get("step") == "last_name":
-        user["last_name"] = message.text
-        user["step"] = "phone"
-        await message.answer("Telefon raqamingizni kiriting:\n(+998901234567)")
-        return
+    elif step == "last_name":
+        user_data[uid]["last_name"] = message.text
+        user_data[uid]["step"] = "phone"
 
-    if user.get("step") == "phone":
-        user["phone"] = message.text
-        user["step"] = "myid"
-        await message.answer(
-            "🪪 myID orqali tasdiqlash (tavsiya etiladi)\n\n"
-            "👉 https://myid.uz\n\n"
-            "Tasdiqlaganingizdan so‘ng yoki hozircha o‘tkazib yuborishingiz mumkin.",
-            reply_markup=skip_kb
-        )
-        return
-
-    if user.get("step") == "myid":
-        user["myid"] = "skipped"
-        user["step"] = "done"
-        await message.answer(
-            "✅ Siz muvaffaqiyatli ro‘yxatdan o‘tdingiz!\n\n"
-            "Endi menyudan foydalanishingiz mumkin.",
-            reply_markup=menu
-        )
-        return
-
-# =====================
-# MENU HANDLERS
-# =====================
-
-@dp.message_handler(text="📅 Qabul sanasini kiritish")
-async def set_date(message: types.Message):
-    users[message.chat.id]["step"] = "date"
-    await message.answer(
-        "📅 Qabul sanasini kiriting:\n\n"
-        "DD.MM.YYYY HH:MM\n"
-        "Masalan: 15.04.2026 09:30"
-    )
-
-@dp.message_handler(lambda m: users.get(m.chat.id, {}).get("step") == "date")
-async def save_date(message: types.Message):
-    try:
-        dt = datetime.strptime(message.text, "%d.%m.%Y %H:%M")
-        users[message.chat.id]["appointment"] = dt
-        users[message.chat.id]["step"] = "done"
+        kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        kb.add(KeyboardButton("📱 Telefon raqamni yuborish", request_contact=True))
 
         await message.answer(
-            f"✅ Qabul sanasi saqlandi:\n\n"
-            f"📅 {dt.strftime('%d.%m.%Y')}\n"
-            f"⏰ {dt.strftime('%H:%M')}",
-            reply_markup=menu
+            "📱 Telefon raqamingizni *Telegram orqali* yuboring:",
+            parse_mode="Markdown",
+            reply_markup=kb
         )
-    except ValueError:
-        await message.answer("❌ Sana formati noto‘g‘ri.")
 
-@dp.message_handler(text="⏰ Mening eslatmalarim")
-async def reminders(message: types.Message):
-    user = users.get(message.chat.id)
-    if not user or "appointment" not in user:
-        await message.answer("❗ Qabul sanasi kiritilmagan.")
-        return
+    elif step == "phone":
+        if not message.contact:
+            await message.answer("❗ Iltimos, telefonni *tugma orqali* yuboring.")
+            return
 
-    dt = user["appointment"]
-    await message.answer(f"📅 Qabul sanangiz:\n{dt.strftime('%d.%m.%Y %H:%M')}")
+        user_data[uid]["phone"] = message.contact.phone_number
+        user_data[uid]["step"] = "passport"
 
-@dp.message_handler(text="📄 Hujjatlar ro‘yxati")
-async def docs(message: types.Message):
-    await message.answer(
-        "📄 HUJJATLAR (umumiy):\n"
-        "• Pasport\n"
-        "• Ariza\n"
-        "• Rasm\n"
-        "• Sug‘urta\n"
-        "• To‘lov kvitansiyasi"
+        await message.answer(
+            "🛂 Pasportingizni JPG formatda yuboring\n"
+            "📏 Hajmi 1 MB dan oshmasin",
+            reply_markup=types.ReplyKeyboardRemove()
+        )
+
+    elif step == "passport":
+        if not message.photo:
+            await message.answer("❗ Faqat JPG rasm yuboring.")
+            return
+
+        photo = message.photo[-1]
+        if photo.file_size > 1_000_000:
+            await message.answer("❗ Fayl hajmi 1 MB dan katta.")
+            return
+
+        user_data[uid]["passport_file_id"] = photo.file_id
+        user_data[uid]["step"] = "done"
+
+        await message.answer(
+            "✅ *Siz muvaffaqiyatli ro‘yxatdan o‘tdingiz!*\n\n"
+            "Endi bot orqali holatingizni kuzatishingiz mumkin.",
+            parse_mode="Markdown",
+            reply_markup=main_menu()
+        )
+
+# =========================
+# MODERN CLASSIC MENU
+# =========================
+def main_menu():
+    menu = InlineKeyboardMarkup(row_width=2)
+    menu.add(
+        InlineKeyboardButton("🟧 📊 Navbat holati", callback_data="queue"),
+        InlineKeyboardButton("🟩 📅 Taxminiy sana", callback_data="date"),
+        InlineKeyboardButton("🟧 🔔 Kuzatuv holati", callback_data="monitor"),
+        InlineKeyboardButton("🟩 👤 Mening ma’lumotlarim", callback_data="profile"),
     )
-
-@dp.message_handler(text="ℹ️ Qanday ishlaydi?")
-async def info(message: types.Message):
-    await message.answer(
-        "Bot siz kiritgan qabul sanasiga qarab\n"
-        "7 / 3 / 1 kun oldin eslatma yuboradi."
+    menu.add(
+        InlineKeyboardButton("⚙️ Yordam", callback_data="help")
     )
+    return menu
 
-@dp.message_handler(text="❌ Kuzatuvni bekor qilish")
-async def cancel(message: types.Message):
-    users.pop(message.chat.id, None)
-    await message.answer("❌ Kuzatuv bekor qilindi.\n/start bilan qayta boshlang.")
+# =========================
+# MENU ACTIONS
+# =========================
+@dp.callback_query_handler(lambda c: c.data == "queue")
+async def queue_status(callback: types.CallbackQuery):
+    await callback.message.answer("📊 Sizning navbatingiz: *hisoblanmoqda*")
 
-# =====================
-# REMINDER LOOP
-# =====================
+@dp.callback_query_handler(lambda c: c.data == "date")
+async def expected_date(callback: types.CallbackQuery):
+    await callback.message.answer("📅 Taxminiy sana: *aniqlanmoqda*")
 
-async def reminder_loop():
-    while True:
-        now = datetime.now()
-        for chat_id, user in users.items():
-            dt = user.get("appointment")
-            if not dt:
-                continue
+@dp.callback_query_handler(lambda c: c.data == "monitor")
+async def monitor_status(callback: types.CallbackQuery):
+    await callback.message.answer("🔔 Kuzatuv faol holatda")
 
-            for days in [7, 3, 1]:
-                key = f"reminded_{days}"
-                if not user.get(key) and now + timedelta(days=days) >= dt > now:
-                    await bot.send_message(
-                        chat_id,
-                        f"⏰ Eslatma!\n{days} kun qoldi.\n📅 {dt.strftime('%d.%m.%Y %H:%M')}"
-                    )
-                    user[key] = True
-        await asyncio.sleep(3600)
+@dp.callback_query_handler(lambda c: c.data == "profile")
+async def profile(callback: types.CallbackQuery):
+    data = user_data.get(callback.from_user.id, {})
+    text = (
+        f"👤 *Profilingiz*\n\n"
+        f"Ism: {data.get('first_name')}\n"
+        f"Familiya: {data.get('last_name')}\n"
+        f"Telefon: {data.get('phone')}"
+    )
+    await callback.message.answer(text, parse_mode="Markdown")
 
-# =====================
+@dp.callback_query_handler(lambda c: c.data == "help")
+async def help_menu(callback: types.CallbackQuery):
+    await callback.message.answer("ℹ️ Yordam bo‘limi (keyin to‘ldiriladi)")
+
+# =========================
 # START BOT
-# =====================
-
+# =========================
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.create_task(reminder_loop())
     print("✅ BOT ISHGA TUSHDI")
     executor.start_polling(dp, skip_updates=True)
