@@ -1,135 +1,120 @@
 import os
-import asyncpg
 from aiogram import Bot, Dispatcher, types
-from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from aiogram.dispatcher import FSMContext
-from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.utils import executor
+from aiogram.dispatcher import FSMContext
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
+
+from db import init_db, add_user, approve_user, reject_user, get_user
+from states import RegisterState
+from keyboards import rules_keyboard, phone_keyboard, admin_approve_keyboard, main_menu
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-DATABASE_URL = os.getenv("DATABASE_URL")
-
 ADMIN_ID = 5266262372
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot, storage=MemoryStorage())
 
-# ======================
-# DATABASE
-# ======================
-
-async def get_db():
-    return await asyncpg.connect(DATABASE_URL)
-
-# ======================
-# STATES
-# ======================
-
-class Register(StatesGroup):
-    first_name = State()
-    last_name = State()
-    phone = State()
-    passport = State()
-
-# ======================
-# START
-# ======================
-
-@dp.message_handler(commands="start")
+# ================= START =================
+@dp.message_handler(commands=["start"])
 async def start(message: types.Message):
-    kb = types.InlineKeyboardMarkup()
-    kb.add(types.InlineKeyboardButton("✅ Roziman", callback_data="agree"))
     await message.answer(
-        "⚠️ *Bot qoidalari*\n\n"
-        "• Ma’lumotlar tekshiriladi\n"
-        "• Admin tasdiqlamasdan keyingi bosqich yo‘q\n\n"
-        "Davom etish uchun rozilik bildiring.",
+        "🔐 *XAVFSIZLIK VA BOT QOIDALARI*\n\n"
+        "• Bot rasmiy elchixona emas\n"
+        "• Ma’lumotlar tekshiruv uchun olinadi\n"
+        "• Admin tasdiqlamaguncha davom etilmaydi\n\n"
+        "Davom etish uchun rozilik bildiring 👇",
         parse_mode="Markdown",
-        reply_markup=kb
+        reply_markup=rules_keyboard()
     )
 
 @dp.callback_query_handler(lambda c: c.data == "agree")
-async def agree(call: types.CallbackQuery):
-    await call.message.answer("Ismingizni kiriting:")
-    await Register.first_name.set()
+async def agree(callback: types.CallbackQuery):
+    await RegisterState.first_name.set()
+    await callback.message.answer("✍️ Ismingizni kiriting:")
+    await callback.answer()
 
-# ======================
-# REGISTRATION
-# ======================
+@dp.callback_query_handler(lambda c: c.data == "decline")
+async def decline(callback: types.CallbackQuery):
+    await callback.message.answer("❌ Roziliksiz botdan foydalanib bo‘lmaydi.")
+    await callback.answer()
 
-@dp.message_handler(state=Register.first_name)
+# ================= REGISTRATION =================
+@dp.message_handler(state=RegisterState.first_name)
 async def first_name(message: types.Message, state: FSMContext):
     await state.update_data(first_name=message.text)
-    await message.answer("Familiyangizni kiriting:")
-    await Register.last_name.set()
+    await RegisterState.last_name.set()
+    await message.answer("✍️ Familiyangizni kiriting:")
 
-@dp.message_handler(state=Register.last_name)
+@dp.message_handler(state=RegisterState.last_name)
 async def last_name(message: types.Message, state: FSMContext):
     await state.update_data(last_name=message.text)
-    kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add(types.KeyboardButton("📱 Telefon raqamni yuborish", request_contact=True))
-    await message.answer("Telefon raqamingizni yuboring:", reply_markup=kb)
-    await Register.phone.set()
+    await RegisterState.phone.set()
+    await message.answer("📱 Telefon raqamingizni yuboring:", reply_markup=phone_keyboard())
 
-@dp.message_handler(content_types=types.ContentType.CONTACT, state=Register.phone)
+@dp.message_handler(content_types=types.ContentType.CONTACT, state=RegisterState.phone)
 async def phone(message: types.Message, state: FSMContext):
+    if message.contact.user_id != message.from_user.id:
+        await message.answer("❌ Faqat o‘zingizning raqamingizni yuboring.")
+        return
     await state.update_data(phone=message.contact.phone_number)
-    await message.answer("📄 Pasport rasmini yuboring (JPG, 1MB):",
-                         reply_markup=types.ReplyKeyboardRemove())
-    await Register.passport.set()
+    await RegisterState.passport.set()
+    await message.answer("🛂 Pasport JPG yuklang (≤1MB):", reply_markup=types.ReplyKeyboardRemove())
 
-@dp.message_handler(content_types=types.ContentType.PHOTO, state=Register.passport)
+@dp.message_handler(content_types=types.ContentType.PHOTO, state=RegisterState.passport)
 async def passport(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-
-    db = await get_db()
-    await db.execute(
-        """
-        INSERT INTO users (telegram_id, first_name, last_name, phone, passport_file)
-        VALUES ($1, $2, $3, $4, $5)
-        """,
-        message.from_user.id,
-        data["first_name"],
-        data["last_name"],
-        data["phone"],
-        message.photo[-1].file_id
-    )
-    await db.close()
-
-    await message.answer("⏳ Ma’lumotlaringiz admin tasdig‘iga yuborildi.")
-    await bot.send_message(
-        ADMIN_ID,
-        f"🆕 Yangi foydalanuvchi:\n"
-        f"{data['first_name']} {data['last_name']}\n"
-        f"📞 {data['phone']}\n\n"
-        f"/approve_{message.from_user.id}"
-    )
-    await state.finish()
-
-# ======================
-# ADMIN APPROVE
-# ======================
-
-@dp.message_handler(lambda m: m.text.startswith("/approve_"))
-async def approve(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
+    photo = message.photo[-1]
+    if photo.file_size > 1_000_000:
+        await message.answer("❌ Fayl 1MB dan katta.")
         return
 
-    user_id = int(message.text.split("_")[1])
-    db = await get_db()
-    await db.execute(
-        "UPDATE users SET status='approved' WHERE telegram_id=$1",
-        user_id
+    data = await state.get_data()
+    user_payload = {
+        "telegram_id": message.from_user.id,
+        "first_name": data["first_name"],
+        "last_name": data["last_name"],
+        "phone": data["phone"],
+        "passport": photo.file_id
+    }
+
+    await add_user(user_payload)
+    await state.finish()
+
+    await bot.send_message(
+        ADMIN_ID,
+        f"🆕 *Yangi foydalanuvchi*\n\n"
+        f"{data['first_name']} {data['last_name']}\n"
+        f"📞 {data['phone']}\n"
+        f"🆔 {message.from_user.id}",
+        parse_mode="Markdown",
+        reply_markup=admin_approve_keyboard(message.from_user.id)
     )
-    await db.close()
+    await bot.send_photo(ADMIN_ID, photo.file_id)
 
-    await bot.send_message(user_id, "✅ Admin tasdiqladi. Siz navbat kuzatuvchisiz.")
-    await message.answer("Tasdiqlandi ✅")
+    await message.answer("⏳ Ma’lumotlaringiz admin tasdig‘iga yuborildi.")
 
-# ======================
-# RUN
-# ======================
+# ================= ADMIN =================
+@dp.callback_query_handler(lambda c: c.data.startswith("approve"))
+async def approve(callback: types.CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        return
+    uid = int(callback.data.split(":")[1])
+    await approve_user(uid)
+    await bot.send_message(uid, "✅ Tasdiqlandingiz!", reply_markup=main_menu())
+    await callback.answer("Tasdiqlandi")
+
+@dp.callback_query_handler(lambda c: c.data.startswith("reject"))
+async def reject(callback: types.CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        return
+    uid = int(callback.data.split(":")[1])
+    await reject_user(uid)
+    await bot.send_message(uid, "❌ Rad etildingiz.")
+    await callback.answer("Rad etildi")
+
+# ================= RUN =================
+async def on_startup(dp):
+    await init_db()
+    print("✅ BOT ISHGA TUSHDI — FULL SYSTEM")
 
 if __name__ == "__main__":
-    print("✅ BOT ISHGA TUSHDI (DB bilan)")
-    executor.start_polling(dp, skip_updates=True)
+    executor.start_polling(dp, on_startup=on_startup)
