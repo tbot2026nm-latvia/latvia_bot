@@ -1,9 +1,10 @@
 from aiogram import Router
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.filters import Command
 
 router = Router()
 
-@router.message(commands=["start"])
+@router.message(Command("start"))
 async def start(msg: Message):
     kb = ReplyKeyboardMarkup(
         keyboard=[
