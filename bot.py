@@ -1,7 +1,6 @@
 import asyncio
 from aiogram import Bot, Dispatcher
 from config import BOT_TOKEN
-from services.db import connect_db
 from handlers import start, register, admin
 
 async def main():
@@ -12,7 +11,6 @@ async def main():
     dp.include_router(register.router)
     dp.include_router(admin.router)
 
-    await connect_db()
     await dp.start_polling(bot)
 
 if __name__ == "__main__":

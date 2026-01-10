@@ -1,12 +1,12 @@
-from aiogram import Router, types
-from aiogram.fsm.context import FSMContext
-from states import Register
+from aiogram import Router
+from aiogram.types import Message
+from aiogram.filters import Command
 
 router = Router()
 
-@router.message(commands=["start"])
-async def start(message: types.Message, state: FSMContext):
-    text = (
+@router.message(Command("start"))
+async def start_handler(message: Message):
+    await message.answer(
         "🛡 Xavfsizlik va foydalanish qoidalari\n\n"
         "Ushbu bot Latviyaning VFS / Elchixona navbatlarini kuzatish uchun yaratilgan.\n\n"
         "🔒 Siz kiritgan shaxsiy ma’lumotlar (ism, telefon, pasport):\n"
@@ -21,15 +21,3 @@ async def start(message: types.Message, state: FSMContext):
         "━━━━━━━━━━━━━━━━━━━━━━\n"
         "[ ✅ Roziman ]\n"
     )
-
-    kb = types.InlineKeyboardMarkup(
-        inline_keyboard=[[types.InlineKeyboardButton(text="✅ Roziman", callback_data="agree")]]
-    )
-
-    await message.answer(text, reply_markup=kb)
-    await state.set_state(Register.waiting_agreement)
-
-@router.callback_query(lambda c: c.data == "agree")
-async def agree(callback: types.CallbackQuery, state: FSMContext):
-    await callback.message.answer("👤 Ismingizni kiriting:")
-    await state.set_state(Register.first_name)
