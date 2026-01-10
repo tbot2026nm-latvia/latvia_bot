@@ -1,45 +1,37 @@
-from aiogram import Router, F
+from aiogram import Router
+from aiogram.filters import Command
 from aiogram.types import Message
-from services.db import get_pending_users, approve_user, get_approved_users, log_event
+from services.db import get_pending, set_status
+from config import ADMIN_ID
 
-ADMIN_ID = 5266262372
 router = Router()
 
-def is_admin(msg):
-    return msg.from_user.id == ADMIN_ID
-
-@router.message(F.text == "/pending")
+@router.message(Command("pending"))
 async def pending(msg: Message):
-    if not is_admin(msg): return
-    users = await get_pending_users()
-    if not users:
-        await msg.answer("✅ Pending yo‘q")
+    if msg.from_user.id != ADMIN_ID:
         return
-    text = "⏳ Kutilayotganlar:\n\n"
+
+    users = await get_pending()
+    if not users:
+        await msg.answer("Pending yo‘q")
+        return
+
     for u in users:
-        text += f"{u['telegram_id']} | {u['first_name']} {u['last_name']}\n"
-    await msg.answer(text)
+        await msg.answer(
+            f"{u['first_name']} {u['last_name']}\n{u['phone']}\n/approve_{u['telegram_id']}  /reject_{u['telegram_id']}"
+        )
 
-@router.message(F.text.startswith("/approve"))
-async def approve(msg: Message):
-    if not is_admin(msg): return
-    uid = int(msg.text.split()[1])
-    q = await approve_user(uid)
-    await log_event(uid, "APPROVED")
-    await msg.answer(f"✅ {uid} tasdiqlandi. Navbati: {q}")
+@router.message()
+async def approve_reject(msg: Message):
+    if msg.from_user.id != ADMIN_ID:
+        return
 
-@router.message(F.text == "/users")
-async def users(msg: Message):
-    if not is_admin(msg): return
-    users = await get_approved_users()
-    text = "📋 Tasdiqlanganlar:\n"
-    for u in users:
-        text += f"{u['queue_number']} | {u['first_name']} {u['last_name']}\n"
-    await msg.answer(text)
+    if msg.text.startswith("/approve_"):
+        tg = int(msg.text.split("_")[1])
+        await set_status(tg, "approved")
+        await msg.answer("✅ Tasdiqlandi")
 
-@router.message(F.text == "/stats")
-async def stats(msg: Message):
-    if not is_admin(msg): return
-    p = len(await get_pending_users())
-    a = len(await get_approved_users())
-    await msg.answer(f"⏳ Pending: {p}\n✅ Approved: {a}")
+    if msg.text.startswith("/reject_"):
+        tg = int(msg.text.split("_")[1])
+        await set_status(tg, "rejected")
+        await msg.answer("❌ Rad etildi")

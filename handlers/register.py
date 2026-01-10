@@ -1,57 +1,60 @@
-from aiogram import Router, types
-from aiogram.fsm.state import StatesGroup, State
+from aiogram import Router
+from aiogram.types import Message
+from aiogram.filters import Command
+from services.db import add_user
 from aiogram.fsm.context import FSMContext
-from services.db import create_user
-from config import ADMIN_ID
+from aiogram.fsm.state import State, StatesGroup
 
 router = Router()
 
-class Register(StatesGroup):
+class Reg(StatesGroup):
     first = State()
     last = State()
     phone = State()
     passport = State()
 
-@router.message(Register.first)
-async def first(msg: types.Message, state: FSMContext):
+@router.message(Command("register"))
+async def start_reg(msg: Message, state: FSMContext):
+    await msg.answer("Ismingizni kiriting:")
+    await state.set_state(Reg.first)
+
+@router.message(Reg.first)
+async def first(msg: Message, state: FSMContext):
     await state.update_data(first=msg.text)
-    await state.set_state(Register.last)
-    await msg.answer("Familiyangiz:")
+    await msg.answer("Familiyangizni kiriting:")
+    await state.set_state(Reg.last)
 
-@router.message(Register.last)
-async def last(msg: types.Message, state: FSMContext):
+@router.message(Reg.last)
+async def last(msg: Message, state: FSMContext):
     await state.update_data(last=msg.text)
-    await state.set_state(Register.phone)
-    await msg.answer("📱 Telefon raqamni yuboring", reply_markup=types.ReplyKeyboardMarkup(
-        keyboard=[[types.KeyboardButton(text="📱 Raqamni yuborish", request_contact=True)]],
-        resize_keyboard=True
-    ))
+    await msg.answer("📱 Telefon raqamingizni yuboring (Contact):", reply_markup=None)
+    await state.set_state(Reg.phone)
 
-@router.message(Register.phone)
-async def phone(msg: types.Message, state: FSMContext):
+@router.message(Reg.phone)
+async def phone(msg: Message, state: FSMContext):
     if not msg.contact:
-        return await msg.answer("❗️ Tugmani bosib yuboring")
+        await msg.answer("❗ Tugma orqali yuboring")
+        return
     await state.update_data(phone=msg.contact.phone_number)
-    await state.set_state(Register.passport)
-    await msg.answer("🛂 Pasport JPG yuboring (≤1MB)", reply_markup=types.ReplyKeyboardRemove())
+    await msg.answer("🛂 Pasport JPG yuklang:")
+    await state.set_state(Reg.passport)
 
-@router.message(Register.passport)
-async def passport(msg: types.Message, state: FSMContext):
+@router.message(Reg.passport)
+async def passport(msg: Message, state: FSMContext):
     if not msg.photo:
-        return await msg.answer("Faqat JPG rasm")
-    file_id = msg.photo[-1].file_id
+        await msg.answer("❗ Faqat rasm yuboring")
+        return
+
     data = await state.get_data()
+    file_id = msg.photo[-1].file_id
 
-    await create_user(msg.from_user.id, data['first'], data['last'], data['phone'], file_id)
-
-    await msg.bot.send_message(
-        ADMIN_ID,
-        f"🆕 Yangi foydalanuvchi:\n{data['first']} {data['last']}\n📱 {data['phone']}",
-        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text="✅ Approve", callback_data=f"ok_{msg.from_user.id}")],
-            [types.InlineKeyboardButton(text="❌ Reject", callback_data=f"no_{msg.from_user.id}")]
-        ])
+    await add_user(
+        msg.from_user.id,
+        data["first"],
+        data["last"],
+        data["phone"],
+        file_id
     )
 
-    await msg.answer("⏳ Admin tasdiqlashini kuting")
+    await msg.answer("⏳ Admin tasdiqlashini kuting...")
     await state.clear()

@@ -1,8 +1,7 @@
 import asyncio
 from aiogram import Bot, Dispatcher
-from aiogram.enums import ParseMode
 from config import BOT_TOKEN
-from services.db import connect_db
+from services.db import connect_db, init_db
 from handlers import start, register, admin, menu
 
 async def main():
@@ -15,9 +14,9 @@ async def main():
     dp.include_router(menu.router)
 
     await connect_db()
+    await init_db()
+
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-from handlers import start, admin, menu
