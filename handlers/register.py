@@ -8,9 +8,9 @@ from states import RegisterState
 router = Router()
 
 @router.callback_query(lambda c: c.data == "start_register")
-async def cb_register(call: CallbackQuery, state: FSMContext):
+async def start_register(call: CallbackQuery, state: FSMContext):
     await state.set_state(RegisterState.name)
-    await call.message.edit_text("Ismingizni kiriting:")
+    await call.message.edit_text("👤 Ismingizni kiriting:")
     await call.answer()
 
 @router.message(Command("register"))
