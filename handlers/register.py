@@ -1,3 +1,4 @@
+from aiogram.types import CallbackQuery
 from aiogram import Router
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.filters import Command
@@ -5,6 +6,12 @@ from aiogram.fsm.context import FSMContext
 from states import RegisterState
 
 router = Router()
+
+@router.callback_query(lambda c: c.data == "start_register")
+async def cb_register(call: CallbackQuery, state: FSMContext):
+    await state.set_state(RegisterState.name)
+    await call.message.edit_text("Ismingizni kiriting:")
+    await call.answer()
 
 @router.message(Command("register"))
 async def start_register(message: Message, state: FSMContext):
