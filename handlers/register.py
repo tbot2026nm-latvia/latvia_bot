@@ -1,4 +1,5 @@
 from aiogram import Router, F
+from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from states import RegisterState
@@ -48,7 +49,7 @@ async def get_phone(message: Message, state: FSMContext):
     await state.update_data(phone=message.contact.phone_number)
     await state.set_state(RegisterState.passport)
     await message.answer("🛂 Pasport rasmini yuboring (jpg/png, 1MB dan kichik):")
-    
+
 @router.message(RegisterState.passport, F.photo)
 async def get_passport(message: Message, state: FSMContext):
     data = await state.get_data()
