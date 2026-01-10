@@ -5,4 +5,11 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
+
+ADMIN_ID = 5266262372
+
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN topilmadi")
+
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL topilmadi")

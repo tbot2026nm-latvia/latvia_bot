@@ -1,37 +1,18 @@
-from aiogram import Router
-from aiogram.filters import Command
-from aiogram.types import Message
-from services.db import get_pending, set_status
-from config import ADMIN_ID
+from aiogram import Router, types
+from services.db import set_status
 
 router = Router()
 
-@router.message(Command("pending"))
-async def pending(msg: Message):
-    if msg.from_user.id != ADMIN_ID:
-        return
+@router.callback_query(lambda c: c.data.startswith("ok_"))
+async def approve(call: types.CallbackQuery):
+    uid = int(call.data.split("_")[1])
+    await set_status(uid, "approved")
+    await call.bot.send_message(uid, "✅ Tasdiqlandingiz!")
+    await call.answer("Tasdiqlandi")
 
-    users = await get_pending()
-    if not users:
-        await msg.answer("Pending yo‘q")
-        return
-
-    for u in users:
-        await msg.answer(
-            f"{u['first_name']} {u['last_name']}\n{u['phone']}\n/approve_{u['telegram_id']}  /reject_{u['telegram_id']}"
-        )
-
-@router.message()
-async def approve_reject(msg: Message):
-    if msg.from_user.id != ADMIN_ID:
-        return
-
-    if msg.text.startswith("/approve_"):
-        tg = int(msg.text.split("_")[1])
-        await set_status(tg, "approved")
-        await msg.answer("✅ Tasdiqlandi")
-
-    if msg.text.startswith("/reject_"):
-        tg = int(msg.text.split("_")[1])
-        await set_status(tg, "rejected")
-        await msg.answer("❌ Rad etildi")
+@router.callback_query(lambda c: c.data.startswith("no_"))
+async def reject(call: types.CallbackQuery):
+    uid = int(call.data.split("_")[1])
+    await set_status(uid, "rejected")
+    await call.bot.send_message(uid, "❌ Rad etildi")
+    await call.answer("Rad etildi")
