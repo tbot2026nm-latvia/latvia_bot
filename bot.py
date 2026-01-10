@@ -1,14 +1,28 @@
+import asyncio
+from aiogram import Bot, Dispatcher
+from aiogram.enums import ParseMode
+from config import BOT_TOKEN
+from services.db import connect_db
+from handlers import start, register, admin, menu
+
 async def main():
-    bot = Bot(...)
+    bot = Bot(BOT_TOKEN)
     dp = Dispatcher()
 
-    # handlerlar keyin qo‘shiladi
+    dp.include_router(start.router)
+    dp.include_router(register.router)
+    dp.include_router(admin.router)
+    dp.include_router(menu.router)
 
-    await init_db()
-    await dp.from aiogram.types import Message
-from aiogram.filters import Command
+    await connect_db()
+    await dp.start_polling(bot)
 
-@dp.message(Command("start"))
-async def start_handler(message: Message):
-    await message.answer("✅ Bot ishlayapti. Keyingi bosqichga o‘tamiz.")
-start_polling(bot)
+if __name__ == "__main__":
+    asyncio.run(main())
+pip install -r requirements.txt
+python bot.py
+
+from handlers import start, admin, menu
+dp.include_router(start.router)
+dp.include_router(admin.router)
+dp.include_router(menu.router)
