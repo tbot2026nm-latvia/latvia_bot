@@ -19,10 +19,5 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-pip install -r requirements.txt
-python bot.py
 
 from handlers import start, admin, menu
-dp.include_router(start.router)
-dp.include_router(admin.router)
-dp.include_router(menu.router)
