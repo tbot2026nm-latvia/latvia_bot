@@ -1,5 +1,12 @@
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import (
+    Message,
+    CallbackQuery,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton
+)
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 import uuid
@@ -17,7 +24,7 @@ class RegisterState(StatesGroup):
     phone = State()
     passport = State()
 
-# ================= START =================
+# ================= START FROM BUTTON =================
 
 @router.callback_query(F.data == "start_register")
 async def start_register(call: CallbackQuery, state: FSMContext):
@@ -46,7 +53,7 @@ async def last_name(message: Message, state: FSMContext):
         one_time_keyboard=True
     )
 
-    await message.answer("📱 Telefon raqamingizni tugma orqali yuboring:", reply_markup=kb)
+    await message.answer("📱 Telefon raqamingizni yuboring:", reply_markup=kb)
     await state.set_state(RegisterState.phone)
 
 # ================= PHONE =================
@@ -88,24 +95,26 @@ async def passport(message: Message, state: FSMContext):
 
     await message.answer("⏳ Ma’lumotlaringiz yuborildi. Admin tekshiradi.")
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"approve:{message.from_user.id}"),
-            InlineKeyboardButton(text="❌ Rad etish", callback_data=f"reject:{message.from_user.id}")
-        ]
-    ])
-
-    await message.bot.send_photo(
-        chat_id=ADMIN_ID,
-        photo=photo.file_id,
-        caption=(
-            f"🆕 Yangi foydalanuvchi\n\n"
-            f"👤 {data['first_name']} {data['last_name']}\n"
-            f"📱 {data['phone']}\n"
-            f"🆔 {message.from_user.id}"
-        ),
-        reply_markup=kb
-    )
+    # ========== SEND TO ADMIN ==========
+    try:
+        await message.bot.send_photo(
+            chat_id=int(ADMIN_ID),
+            photo=photo.file_id,
+            caption=(
+                f"🆕 Yangi ro‘yxat\n\n"
+                f"👤 {data['first_name']} {data['last_name']}\n"
+                f"📱 {data['phone']}\n"
+                f"🆔 {message.from_user.id}"
+            ),
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"approve:{message.from_user.id}"),
+                    InlineKeyboardButton(text="❌ Rad etish", callback_data=f"reject:{message.from_user.id}")
+                ]
+            ])
+        )
+    except Exception as e:
+        await message.answer(f"❌ Admin ga yuborishda xatolik: {e}")
 
     await state.clear()
 
@@ -118,20 +127,13 @@ async def passport_wrong(message: Message):
 @router.callback_query(F.data.startswith("approve:"))
 async def approve(call: CallbackQuery):
     user_id = int(call.data.split(":")[1])
-
     await update_user_status(user_id, "approved")
 
     await call.message.edit_caption(call.message.caption + "\n\n✅ TASDIQLANDI")
 
-    menu = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📊 Navbat qo‘shish", callback_data="menu_queue")],
-        [InlineKeyboardButton(text="👤 Profil", callback_data="menu_profile")]
-    ])
-
     await call.bot.send_message(
         user_id,
-        "🎉 Siz tasdiqlandingiz!\nEndi monitoringdan foydalanishingiz mumkin.",
-        reply_markup=menu
+        "🎉 Siz tasdiqlandingiz!\nEndi monitoringdan foydalanishingiz mumkin."
     )
 
     await call.answer("Tasdiqlandi")
@@ -141,6 +143,8 @@ async def approve(call: CallbackQuery):
 async def reject(call: CallbackQuery):
     user_id = int(call.data.split(":")[1])
     await update_user_status(user_id, "rejected")
+
     await call.message.edit_caption(call.message.caption + "\n\n❌ RAD ETILDI")
     await call.bot.send_message(user_id, "❌ Ro‘yxatdan o‘tish rad etildi.")
+
     await call.answer("Rad etildi")
