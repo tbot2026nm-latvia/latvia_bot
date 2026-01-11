@@ -10,6 +10,14 @@ router = Router()
 ADMIN_ID = 5266262372
 
 
+# ========== SURNAME ==========
+@router.message(RegisterState.name)
+async def get_name(message: Message, state: FSMContext):
+    await state.update_data(name=message.text)
+    await state.set_state(RegisterState.surname)
+    await message.answer("👤 Familiyangizni kiriting:")
+
+
 # ========== NAME ==========
 router.callback_query(lambda c: c.data == "start_register")
 async def start_register(call: CallbackQuery, state: FSMContext):
@@ -21,14 +29,6 @@ async def start_register(call: CallbackQuery, state: FSMContext):
 async def start_register(message: Message, state: FSMContext):
     await state.set_state(RegisterState.name)
     await message.answer("Ismingizni kiriting:")
-
-
-# ========== SURNAME ==========
-@router.message(RegisterState.name)
-async def get_name(message: Message, state: FSMContext):
-    await state.update_data(name=message.text)
-    await state.set_state(RegisterState.surname)
-    await message.answer("👤 Familiyangizni kiriting:")
 
 
 # ========== PHONE ==========
