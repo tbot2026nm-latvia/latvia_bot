@@ -27,6 +27,13 @@ class RegisterState(StatesGroup):
     phone = State()
     passport = State()
 
+@router.callback_query(F.data == "start_register")
+async def start_register_callback(call: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await call.message.answer("👤 Ismingizni kiriting:")
+    await state.set_state(RegisterState.first_name)
+    await call.answer()
+
 
 # ============================
 # START REGISTRATION
