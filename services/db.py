@@ -1,62 +1,87 @@
-import sqlite3
+import asyncpg
+import os
+import logging
 
-DB_NAME = "database.db"
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-
-def connect_db():
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS users (
-        telegram_id INTEGER PRIMARY KEY,
-        first_name TEXT,
-        last_name TEXT,
-        phone TEXT,
-        passport_file TEXT,
-        status TEXT
-    )
-    """)
-
-    conn.commit()
-    conn.close()
+pool: asyncpg.Pool | None = None
 
 
-async def create_user(telegram_id, first_name, last_name, phone, passport_file):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
+# ========================
+# CONNECT
+# ========================
+async def connect_db():
+    global pool
+    if pool:
+        return pool
 
-    cursor.execute("""
-    INSERT OR REPLACE INTO users 
-    (telegram_id, first_name, last_name, phone, passport_file, status)
-    VALUES (?, ?, ?, ?, ?, ?)
-    """, (telegram_id, first_name, last_name, phone, passport_file, "pending"))
+    pool = await asyncpg.create_pool(DATABASE_URL, ssl="require")
 
-    conn.commit()
-    conn.close()
+    async with pool.acquire() as conn:
+        await conn.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            telegram_id BIGINT UNIQUE,
+            first_name TEXT,
+            last_name TEXT,
+            phone TEXT,
+            passport_file TEXT,
+            status TEXT DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+        """)
 
-
-async def update_user_status(telegram_id, status):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-
-    cursor.execute(
-        "UPDATE users SET status=? WHERE telegram_id=?",
-        (status, telegram_id)
-    )
-
-    conn.commit()
-    conn.close()
+    logging.info("✅ Database ulandi")
+    return pool
 
 
-async def get_user_status(telegram_id):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
+# ========================
+# CREATE USER
+# ========================
+async def create_user(telegram_id: int, first_name: str, last_name: str, phone: str, passport_file: str):
+    async with pool.acquire() as conn:
+        await conn.execute("""
+        INSERT INTO users (telegram_id, first_name, last_name, phone, passport_file, status)
+        VALUES ($1, $2, $3, $4, $5, 'pending')
+        ON CONFLICT (telegram_id) DO UPDATE SET
+            first_name = EXCLUDED.first_name,
+            last_name = EXCLUDED.last_name,
+            phone = EXCLUDED.phone,
+            passport_file = EXCLUDED.passport_file,
+            status = 'pending'
+        """, telegram_id, first_name, last_name, phone, passport_file)
 
-    cursor.execute("SELECT status FROM users WHERE telegram_id=?", (telegram_id,))
-    row = cursor.fetchone()
-    conn.close()
 
-    if row:
-        return row[0]
-    return None
+# ========================
+# UPDATE STATUS
+# ========================
+async def update_user_status(telegram_id: int, status: str):
+    async with pool.acquire() as conn:
+        await conn.execute("""
+        UPDATE users SET status=$1 WHERE telegram_id=$2
+        """, status, telegram_id)
+
+
+# ========================
+# GET USER
+# ========================
+async def get_user(telegram_id: int):
+    async with pool.acquire() as conn:
+        return await conn.fetchrow("""
+        SELECT * FROM users WHERE telegram_id=$1
+        """, telegram_id)
+
+
+# ========================
+# IS USER APPROVED
+# ========================
+async def is_user_approved(telegram_id: int) -> bool:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("""
+        SELECT status FROM users WHERE telegram_id=$1
+        """, telegram_id)
+
+        if not row:
+            return False
+
+        return row["status"] == "approved"
