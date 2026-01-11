@@ -74,3 +74,9 @@ async def get_user_queue(user_id):
 async def set_queue_found(queue_id):
     async with pool.acquire() as conn:
         await conn.execute("UPDATE queue SET found=TRUE, status='found' WHERE id=$1", queue_id)
+
+# ===== ADMIN =====
+
+async def get_pending_users():
+    async with pool.acquire() as conn:
+        return await conn.fetch("SELECT * FROM users WHERE status='pending'")
