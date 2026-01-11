@@ -4,62 +4,61 @@ from aiogram.filters import CommandStart
 
 router = Router()
 
-WELCOME = """
-✨ LATVIA VFS MONITORING BOT
+WELCOME_TEXT = """
+✨ <b>LATVIA VFS MONITORING BOT</b>
 
 Siz Latviyaning:
-🇱🇻 Elchixona  
-🇪🇺 VFS Global  
+🇱🇻 Elchixonasi
+🇪🇺 VFS Global
 navbatlarini avtomatik kuzatish tizimiga ulandingiz.
 
 ────────────────────
-🛡 Xavfsizlik va foydalanish qoidalari
+🛡 <b>Xavfsizlik va qoidalar</b>
 
-🔐 Sizdan so‘raladi:
-• Ism familiya
-• Telefon raqam
-• Pasport JPG
+Sizdan quyidagilar so‘raladi:
+• Ism familiya  
+• Telefon raqam  
+• Pasport (foto)
 
-Ma’lumotlar:
-• Faqat navbat uchun ishlatiladi
-• Uchinchi shaxslarga berilmaydi
-• Faqat Admin ko‘radi
+Bu ma’lumotlar:
+✔ Faqat monitoring uchun ishlatiladi  
+✔ Uchinchi shaxslarga berilmaydi  
+✔ Faqat admin ko‘radi  
 
 ❗ Soxta ma’lumot taqiqlanadi  
 ❗ Bitta odam – bitta hisob  
 
-Admin tasdiqlamaguncha tizim yopiq.
+Admin tasdiqlamaguncha bot yopiq bo‘ladi.
 
 ────────────────────
-Davom etish orqali rozilik bildirasiz.
+Davom etish orqali ushbu shartlarga rozilik bildirasiz.
 """
 
 def rules_keyboard():
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Roziman", callback_data="agree")],
-            [InlineKeyboardButton(text="❌ Chiqish", callback_data="exit")]
-        ]
-    )
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Roziman", callback_data="agree")],
+        [InlineKeyboardButton(text="❌ Chiqish", callback_data="exit")]
+    ])
 
 @router.message(CommandStart())
-async def start(message: Message):
-    await message.answer(WELCOME, reply_markup=rules_keyboard())
+async def start_cmd(message: Message):
+    await message.answer(WELCOME_TEXT, reply_markup=rules_keyboard(), parse_mode="HTML")
+
 
 @router.callback_query(F.data == "agree")
-async def agreed(call: CallbackQuery):
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="📝 Ro‘yxatdan o‘tish", callback_data="start_register")]
-        ]
-    )
+async def agree(call: CallbackQuery):
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📝 Ro‘yxatdan o‘tish", callback_data="start_register")]
+    ])
 
     await call.message.edit_text(
-        "🎉 Xush kelibsiz!\n\n"
-        "Ro‘yxatdan o‘tish uchun quyidagi tugmani bosing:",
-        reply_markup=kb
+        "🎉 <b>Xush kelibsiz!</b>\n\n"
+        "Ro‘yxatdan o‘tish uchun quyidagi tugmani bosing.",
+        reply_markup=kb,
+        parse_mode="HTML"
     )
     await call.answer()
+
 
 @router.callback_query(F.data == "exit")
 async def exit_bot(call: CallbackQuery):
