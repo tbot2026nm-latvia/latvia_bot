@@ -1,20 +1,10 @@
 import asyncio
-import random
-from services.db import pool
-from datetime import datetime
+from services.db import get_pool
 
-async def monitor_loop(bot):
+async def monitor_loop():
     while True:
+        pool = await get_pool()
         async with pool.acquire() as conn:
-            rows = await conn.fetch("SELECT * FROM queue WHERE found=FALSE")
-            for r in rows:
-                if random.random() > 0.95:  # 5% chance found
-                    await conn.execute(
-                        "UPDATE queue SET found=TRUE, status='FOUND', last_checked=NOW() WHERE id=$1",
-                        r["id"]
-                    )
-                    await bot.send_message(
-                        r["user_id"],
-                        f"🎉 SLOT TOPILDI!\n{r['service']} / {r['location']}"
-                    )
-        await asyncio.sleep(30)
+            # hozircha test
+            await conn.execute("SELECT 1")
+        await asyncio.sleep(60)
