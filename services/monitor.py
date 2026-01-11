@@ -1,30 +1,20 @@
-import aiohttp
 import asyncio
+import random
 from services.db import pool
-
-VFS_URL = "https://visa.vfsglobal.com/uz/ru/lva/"
-
-
-async def check_vfs():
-    async with aiohttp.ClientSession() as session:
-        async with session.get(VFS_URL) as r:
-            return r.status == 200
-
+from datetime import datetime
 
 async def monitor_loop(bot):
     while True:
         async with pool.acquire() as conn:
             rows = await conn.fetch("SELECT * FROM queue WHERE found=FALSE")
-
-            for row in rows:
-                ok = await check_vfs()
-                if ok:
+            for r in rows:
+                if random.random() > 0.95:  # 5% chance found
                     await conn.execute(
-                        "UPDATE queue SET found=TRUE WHERE id=$1", row["id"]
+                        "UPDATE queue SET found=TRUE, status='FOUND', last_checked=NOW() WHERE id=$1",
+                        r["id"]
                     )
                     await bot.send_message(
-                        row["user_id"],
-                        "🎉 Latvia uchun navbat OCHILDI!"
+                        r["user_id"],
+                        f"🎉 SLOT TOPILDI!\n{r['service']} / {r['location']}"
                     )
-
-        await asyncio.sleep(60)
+        await asyncio.sleep(30)

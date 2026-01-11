@@ -1,54 +1,35 @@
-from aiogram import Router, F
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from services.db import get_user
+from aiogram import Router
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
+from services.db import get_user, add_queue, get_user_queue
 
 router = Router()
 
-# ==========================
-# MAIN MENU
-# ==========================
-@router.callback_query(F.data == "open_menu")
-async def open_menu(call: CallbackQuery):
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📊 Navbat qo‘shish", callback_data="add_menu")],
-        [InlineKeyboardButton(text="📄 Profil", callback_data="profile")]
-    ])
-
-    await call.message.edit_text("📋 Asosiy menyu:", reply_markup=kb)
-    await call.answer()
-
-
-# ==========================
-# ADD QUEUE
-# ==========================
-@router.callback_query(F.data == "add_menu")
-async def add_queue(call: CallbackQuery):
-    await call.message.edit_text(
-        "📊 Navbat monitoringi yoqildi.\n\n"
-        "Biz Latvia VFS va Elchixona navbatlarini tekshirib boramiz.\n"
-        "Agar bo‘sh joy chiqsa sizga xabar beramiz."
-    )
-    await call.answer("Monitoring yoqildi")
-
-
-# ==========================
-# PROFILE
-# ==========================
-@router.callback_query(F.data == "profile")
-async def profile(call: CallbackQuery):
-    user = await get_user(call.from_user.id)
-
-    if not user:
-        await call.message.edit_text("❌ Profil topilmadi.")
-        return
-
-    text = (
-        f"👤 Profilingiz:\n\n"
-        f"Ism: {user['first_name']}\n"
-        f"Familiya: {user['last_name']}\n"
-        f"Telefon: {user['phone']}\n"
-        f"Holat: {user['status']}"
+def menu():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📊 Navbat"), KeyboardButton(text="➕ Qo‘shish")],
+            [KeyboardButton(text="👤 Profil"), KeyboardButton(text="⚙️ Sozlamalar")]
+        ],
+        resize_keyboard=True
     )
 
-    await call.message.edit_text(text)
-    await call.answer()
+@router.message(lambda m: m.text == "➕ Qo‘shish")
+async def add(message: Message):
+    await add_queue(message.from_user.id, "VFS", "Toshkent")
+    await message.answer("⏳ Navbat qo‘shildi", reply_markup=menu())
+
+@router.message(lambda m: m.text == "📊 Navbat")
+async def navbat(message: Message):
+    q = await get_user_queue(message.from_user.id)
+    txt = "📊 Sizning navbatlaringiz:\n\n"
+    for r in q:
+        txt += f"{r['service']} - {r['location']} - {r['status']}\n"
+    await message.answer(txt or "Bo‘sh", reply_markup=menu())
+
+@router.message(lambda m: m.text == "👤 Profil")
+async def profile(message: Message):
+    u = await get_user(message.from_user.id)
+    await message.answer(
+        f"{u['first_name']} {u['last_name']}\n{u['phone']}\nStatus: {u['status']}",
+        reply_markup=menu()
+    )
