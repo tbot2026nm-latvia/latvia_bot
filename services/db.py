@@ -1,87 +1,72 @@
 import asyncpg
 import os
-import logging
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-pool: asyncpg.Pool | None = None
+pool = None
 
 
-# ========================
-# CONNECT
-# ========================
 async def connect_db():
     global pool
-    if pool:
-        return pool
+    pool = await asyncpg.create_pool(DATABASE_URL)
 
-    pool = await asyncpg.create_pool(DATABASE_URL, ssl="require")
-
+    # Users table
     async with pool.acquire() as conn:
         await conn.execute("""
         CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY,
-            telegram_id BIGINT UNIQUE,
+            telegram_id BIGINT PRIMARY KEY,
             first_name TEXT,
             last_name TEXT,
             phone TEXT,
             passport_file TEXT,
-            status TEXT DEFAULT 'pending',
-            created_at TIMESTAMP DEFAULT NOW()
+            status TEXT DEFAULT 'pending'
         )
         """)
 
-    logging.info("✅ Database ulandi")
-    return pool
+        # Queue table
+        await conn.execute("""
+        CREATE TABLE IF NOT EXISTS queue (
+            id SERIAL PRIMARY KEY,
+            user_id BIGINT,
+            service TEXT,
+            location TEXT,
+            status TEXT DEFAULT 'waiting',
+            last_checked TIMESTAMP,
+            found BOOLEAN DEFAULT FALSE
+        )
+        """)
 
 
-# ========================
-# CREATE USER
-# ========================
-async def create_user(telegram_id: int, first_name: str, last_name: str, phone: str, passport_file: str):
+# =======================
+# USERS
+# =======================
+async def create_user(telegram_id, first_name, last_name, phone, passport_file):
     async with pool.acquire() as conn:
         await conn.execute("""
-        INSERT INTO users (telegram_id, first_name, last_name, phone, passport_file, status)
-        VALUES ($1, $2, $3, $4, $5, 'pending')
-        ON CONFLICT (telegram_id) DO UPDATE SET
-            first_name = EXCLUDED.first_name,
-            last_name = EXCLUDED.last_name,
-            phone = EXCLUDED.phone,
-            passport_file = EXCLUDED.passport_file,
-            status = 'pending'
+        INSERT INTO users (telegram_id, first_name, last_name, phone, passport_file)
+        VALUES ($1,$2,$3,$4,$5)
+        ON CONFLICT (telegram_id) DO NOTHING
         """, telegram_id, first_name, last_name, phone, passport_file)
 
 
-# ========================
-# UPDATE STATUS
-# ========================
-async def update_user_status(telegram_id: int, status: str):
+async def update_user_status(user_id, status):
     async with pool.acquire() as conn:
-        await conn.execute("""
-        UPDATE users SET status=$1 WHERE telegram_id=$2
-        """, status, telegram_id)
+        await conn.execute(
+            "UPDATE users SET status=$1 WHERE telegram_id=$2",
+            status, user_id
+        )
 
 
-# ========================
-# GET USER
-# ========================
-async def get_user(telegram_id: int):
+async def is_user_approved(user_id):
     async with pool.acquire() as conn:
-        return await conn.fetchrow("""
-        SELECT * FROM users WHERE telegram_id=$1
-        """, telegram_id)
+        row = await conn.fetchrow(
+            "SELECT status FROM users WHERE telegram_id=$1", user_id
+        )
+        return row and row["status"] == "approved"
 
 
-# ========================
-# IS USER APPROVED
-# ========================
-async def is_user_approved(telegram_id: int) -> bool:
+async def get_user(user_id):
     async with pool.acquire() as conn:
-        row = await conn.fetchrow("""
-        SELECT status FROM users WHERE telegram_id=$1
-        """, telegram_id)
-
-        if not row:
-            return False
-
-        return row["status"] == "approved"
+        return await conn.fetchrow(
+            "SELECT * FROM users WHERE telegram_id=$1", user_id
+        )

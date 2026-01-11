@@ -1,19 +1,31 @@
-from aiogram import Router
-from aiogram.filters import Command
-from aiogram.types import Message
-from services.db import get_user
+from aiogram import Router, F
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from services.db import pool, is_user_approved
 
 router = Router()
 
-@router.message(Command("menu"))
-async def menu(msg: Message):
-    user = await get_user(msg.from_user.id)
-    if not user:
-        await msg.answer("Avval ro‘yxatdan o‘ting /register")
+@router.message(F.text == "📊 Navbat qo‘shish")
+async def add_queue(message: Message):
+    if not await is_user_approved(message.from_user.id):
+        await message.answer("⛔ Avval admin tasdiqlashi kerak.")
         return
 
-    if user["status"] != "approved":
-        await msg.answer("⏳ Admin tasdiqlashini kuting")
-        return
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="VFS Riga", callback_data="add:VFS:Riga")],
+        [InlineKeyboardButton(text="Elchixona", callback_data="add:EMBASSY:Riga")]
+    ])
+    await message.answer("Xizmatni tanlang:", reply_markup=kb)
 
-    await msg.answer("📋 MENYU\n1. Navbat\n2. Status")
+
+@router.callback_query(F.data.startswith("add:"))
+async def add(call):
+    _, service, location = call.data.split(":")
+
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO queue (user_id, service, location) VALUES ($1,$2,$3)",
+            call.from_user.id, service, location
+        )
+
+    await call.message.edit_text("⏳ Monitoringga qo‘shildi.")
+    await call.answer()
