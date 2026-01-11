@@ -1,71 +1,62 @@
-import asyncpg
-import os
+import sqlite3
 
-DB_URL = os.getenv("DATABASE_URL")
-
-pool = None
+DB_NAME = "database.db"
 
 
-async def connect_db():
-    global pool
-    pool = await asyncpg.create_pool(DB_URL)
-    print("✅ Database ulandi")
+def connect_db():
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS users (
+        telegram_id INTEGER PRIMARY KEY,
+        first_name TEXT,
+        last_name TEXT,
+        phone TEXT,
+        passport_file TEXT,
+        status TEXT
+    )
+    """)
+
+    conn.commit()
+    conn.close()
 
 
-# =========================
-# CREATE USER
-# =========================
 async def create_user(telegram_id, first_name, last_name, phone, passport_file):
-    query = """
-    INSERT INTO users (telegram_id, first_name, last_name, phone, passport_file, status)
-    VALUES ($1, $2, $3, $4, $5, 'pending')
-    ON CONFLICT (telegram_id) DO UPDATE SET
-        first_name = EXCLUDED.first_name,
-        last_name = EXCLUDED.last_name,
-        phone = EXCLUDED.phone,
-        passport_file = EXCLUDED.passport_file,
-        status = 'pending'
-    """
-    async with pool.acquire() as conn:
-        await conn.execute(
-            query,
-            telegram_id,
-            first_name,
-            last_name,
-            phone,
-            passport_file,
-        )
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    INSERT OR REPLACE INTO users 
+    (telegram_id, first_name, last_name, phone, passport_file, status)
+    VALUES (?, ?, ?, ?, ?, ?)
+    """, (telegram_id, first_name, last_name, phone, passport_file, "pending"))
+
+    conn.commit()
+    conn.close()
 
 
-# =========================
-# UPDATE STATUS
-# =========================
-async def set_user_status(telegram_id, status):
-    query = """
-    UPDATE users
-    SET status = $1
-    WHERE telegram_id = $2
-    """
-    async with pool.acquire() as conn:
-        await conn.execute(query, status, telegram_id)
+async def update_user_status(telegram_id, status):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "UPDATE users SET status=? WHERE telegram_id=?",
+        (status, telegram_id)
+    )
+
+    conn.commit()
+    conn.close()
 
 
-# =========================
-# GET USER
-# =========================
-async def get_user(telegram_id):
-    query = "SELECT * FROM users WHERE telegram_id = $1"
-    async with pool.acquire() as conn:
-        return await conn.fetchrow(query, telegram_id)
+async def get_user_status(telegram_id):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
 
+    cursor.execute("SELECT status FROM users WHERE telegram_id=?", (telegram_id,))
+    row = cursor.fetchone()
+    conn.close()
 
-# =========================
-# CHECK APPROVED
-# =========================
-async def is_approved(telegram_id):
-    query = "SELECT status FROM users WHERE telegram_id = $1"
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow(query, telegram_id)
-        if not row:
-            return False
-        return row["status"] == "approved"
+    if row:
+        return row[0]
+    return None
