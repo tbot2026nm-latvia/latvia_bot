@@ -60,3 +60,44 @@ async def get_user(telegram_id):
 
 async def get_pending_users():
     return await pool.fetch("SELECT * FROM users WHERE status='pending'")
+
+# ============================
+# QUEUE FUNCTIONS
+# ============================
+
+async def add_queue(user_id: int, service: str, location: str):
+    await pool.execute("""
+        INSERT INTO queue (user_id, service, location, status, last_check, found)
+        VALUES ($1, $2, $3, 'waiting', NOW(), FALSE)
+    """, user_id, service, location)
+
+
+async def get_user_queue(user_id: int):
+    return await pool.fetch("""
+        SELECT * FROM queue
+        WHERE user_id=$1
+        ORDER BY id DESC
+    """, user_id)
+
+
+async def mark_queue_found(queue_id: int):
+    await pool.execute("""
+        UPDATE queue
+        SET found=TRUE, status='found'
+        WHERE id=$1
+    """, queue_id)
+
+
+async def update_last_check(queue_id: int):
+    await pool.execute("""
+        UPDATE queue
+        SET last_check=NOW()
+        WHERE id=$1
+    """, queue_id)
+
+
+async def get_active_queues():
+    return await pool.fetch("""
+        SELECT * FROM queue
+        WHERE found=FALSE
+    """)
