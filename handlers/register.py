@@ -10,17 +10,16 @@ from aiogram.types import (
 )
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-import os
 import uuid
 
-from services.db import create_user, set_user_status
+from services.db import create_user, update_user_status
 from config import ADMIN_ID
 
 router = Router()
 
 
 # ============================
-# FSM States
+# FSM
 # ============================
 class RegisterState(StatesGroup):
     first_name = State()
@@ -30,7 +29,7 @@ class RegisterState(StatesGroup):
 
 
 # ============================
-# /register command
+# START REGISTRATION
 # ============================
 @router.message(Command("register"))
 async def start_register(message: Message, state: FSMContext):
@@ -61,29 +60,28 @@ async def get_last_name(message: Message, state: FSMContext):
             [KeyboardButton(text="📱 Telefon raqamni yuborish", request_contact=True)]
         ],
         resize_keyboard=True,
-        one_time_keyboard=True,
     )
 
     await message.answer(
-        "📱 Telefon raqamingizni yuboring (Telegram contact orqali):",
+        "📱 Telefon raqamingizni tugma orqali yuboring:",
         reply_markup=kb,
     )
     await state.set_state(RegisterState.phone)
 
 
 # ============================
-# PHONE (CONTACT REQUIRED)
+# PHONE
 # ============================
 @router.message(RegisterState.phone, F.contact)
 async def get_phone(message: Message, state: FSMContext):
     if message.contact.user_id != message.from_user.id:
-        await message.answer("❌ Iltimos, o‘zingizning telefon raqamingizni yuboring.")
+        await message.answer("❌ Faqat o‘zingizning raqamingizni yuboring.")
         return
 
     await state.update_data(phone=message.contact.phone_number)
 
     await message.answer(
-        "🛂 Endi pasportingizning fotosuratini yuboring (JPG, 1MB dan kichik).",
+        "🛂 Endi pasportingizning rasmini yuboring.",
         reply_markup=None,
     )
     await state.set_state(RegisterState.passport)
@@ -105,10 +103,7 @@ async def get_passport(message: Message, state: FSMContext):
         await message.answer("❌ Fayl 1MB dan katta. Kichikroq rasm yuboring.")
         return
 
-    file_id = photo.file_id
-
     data = await state.get_data()
-
     passport_name = f"{uuid.uuid4()}.jpg"
 
     await create_user(
@@ -119,11 +114,8 @@ async def get_passport(message: Message, state: FSMContext):
         passport_file=passport_name,
     )
 
-    await message.answer(
-        "⏳ Ma’lumotlaringiz qabul qilindi.\nAdmin tasdiqlashini kuting."
-    )
+    await message.answer("⏳ Ma’lumotlaringiz yuborildi. Admin tekshiradi.")
 
-    # Send to admin
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -141,12 +133,12 @@ async def get_passport(message: Message, state: FSMContext):
 
     await message.bot.send_photo(
         chat_id=ADMIN_ID,
-        photo=file_id,
+        photo=photo.file_id,
         caption=(
-            f"🆕 Yangi ro‘yxatdan o‘tish:\n\n"
+            f"🆕 Yangi ro‘yxat:\n\n"
             f"👤 {data['first_name']} {data['last_name']}\n"
             f"📱 {data['phone']}\n"
-            f"🆔 Telegram ID: {message.from_user.id}"
+            f"🆔 ID: {message.from_user.id}"
         ),
         reply_markup=kb,
     )
@@ -156,19 +148,19 @@ async def get_passport(message: Message, state: FSMContext):
 
 @router.message(RegisterState.passport)
 async def wrong_passport(message: Message):
-    await message.answer("❗ Iltimos, pasport rasmini yuboring (foto).")
+    await message.answer("❗ Pasportni rasm sifatida yuboring.")
 
 
 # ============================
-# ADMIN APPROVE / REJECT
+# ADMIN ACTIONS
 # ============================
 @router.callback_query(F.data.startswith("approve:"))
 async def approve_user(call: CallbackQuery):
     user_id = int(call.data.split(":")[1])
 
-    await set_user_status(user_id, "approved")
+    await update_user_status(user_id, "approved")
     await call.message.edit_caption(call.message.caption + "\n\n✅ TASDIQLANDI")
-    await call.bot.send_message(user_id, "🎉 Admin sizni tasdiqladi! Endi botdan foydalanishingiz mumkin.")
+    await call.bot.send_message(user_id, "🎉 Siz tasdiqlandingiz!")
     await call.answer("Tasdiqlandi")
 
 
@@ -176,7 +168,7 @@ async def approve_user(call: CallbackQuery):
 async def reject_user(call: CallbackQuery):
     user_id = int(call.data.split(":")[1])
 
-    await set_user_status(user_id, "rejected")
+    await update_user_status(user_id, "rejected")
     await call.message.edit_caption(call.message.caption + "\n\n❌ RAD ETILDI")
-    await call.bot.send_message(user_id, "❌ Ro‘yxatdan o‘tish rad etildi.")
+    await call.bot.send_message(user_id, "❌ Siz rad etildingiz.")
     await call.answer("Rad etildi")
