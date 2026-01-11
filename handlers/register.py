@@ -7,6 +7,7 @@ from aiogram.types import (
     KeyboardButton,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
+    ReplyKeyboardRemove
 )
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
@@ -17,7 +18,6 @@ from config import ADMIN_ID
 
 router = Router()
 
-
 # ============================
 # FSM
 # ============================
@@ -27,22 +27,26 @@ class RegisterState(StatesGroup):
     phone = State()
     passport = State()
 
+
+# ============================
+# CALLBACK FROM START SCREEN
+# ============================
 @router.callback_query(F.data == "start_register")
 async def start_register_callback(call: CallbackQuery, state: FSMContext):
     await state.clear()
-    await call.message.answer("👤 Ismingizni kiriting:")
     await state.set_state(RegisterState.first_name)
+    await call.message.edit_text("👤 Ismingizni kiriting:")
     await call.answer()
 
 
 # ============================
-# START REGISTRATION
+# /register (backup)
 # ============================
 @router.message(Command("register"))
 async def start_register(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer("👤 Ismingizni kiriting:")
     await state.set_state(RegisterState.first_name)
+    await message.answer("👤 Ismingizni kiriting:")
 
 
 # ============================
@@ -51,8 +55,8 @@ async def start_register(message: Message, state: FSMContext):
 @router.message(RegisterState.first_name)
 async def get_first_name(message: Message, state: FSMContext):
     await state.update_data(first_name=message.text)
-    await message.answer("👤 Familiyangizni kiriting:")
     await state.set_state(RegisterState.last_name)
+    await message.answer("👤 Familiyangizni kiriting:")
 
 
 # ============================
@@ -63,17 +67,13 @@ async def get_last_name(message: Message, state: FSMContext):
     await state.update_data(last_name=message.text)
 
     kb = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="📱 Telefon raqamni yuborish", request_contact=True)]
-        ],
+        keyboard=[[KeyboardButton(text="📱 Telefon raqamni yuborish", request_contact=True)]],
         resize_keyboard=True,
+        one_time_keyboard=True
     )
 
-    await message.answer(
-        "📱 Telefon raqamingizni tugma orqali yuboring:",
-        reply_markup=kb,
-    )
     await state.set_state(RegisterState.phone)
+    await message.answer("📱 Telefon raqamingizni yuboring:", reply_markup=kb)
 
 
 # ============================
@@ -86,12 +86,12 @@ async def get_phone(message: Message, state: FSMContext):
         return
 
     await state.update_data(phone=message.contact.phone_number)
+    await state.set_state(RegisterState.passport)
 
     await message.answer(
-        "🛂 Endi pasportingizning rasmini yuboring.",
-        reply_markup=None,
+        "🛂 Pasportingiz rasmini yuboring (JPG, 1MB gacha).",
+        reply_markup=ReplyKeyboardRemove()
     )
-    await state.set_state(RegisterState.passport)
 
 
 @router.message(RegisterState.phone)
@@ -107,7 +107,7 @@ async def get_passport(message: Message, state: FSMContext):
     photo = message.photo[-1]
 
     if photo.file_size > 1_000_000:
-        await message.answer("❌ Fayl 1MB dan katta. Kichikroq rasm yuboring.")
+        await message.answer("❌ Fayl 1MB dan katta.")
         return
 
     data = await state.get_data()
@@ -124,30 +124,22 @@ async def get_passport(message: Message, state: FSMContext):
     await message.answer("⏳ Ma’lumotlaringiz yuborildi. Admin tekshiradi.")
 
     kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="✅ Tasdiqlash",
-                    callback_data=f"approve:{message.from_user.id}",
-                ),
-                InlineKeyboardButton(
-                    text="❌ Rad etish",
-                    callback_data=f"reject:{message.from_user.id}",
-                ),
-            ]
-        ]
+        inline_keyboard=[[
+            InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"approve:{message.from_user.id}"),
+            InlineKeyboardButton(text="❌ Rad etish", callback_data=f"reject:{message.from_user.id}")
+        ]]
     )
 
     await message.bot.send_photo(
-        chat_id=ADMIN_ID,
+        ADMIN_ID,
         photo=photo.file_id,
         caption=(
             f"🆕 Yangi ro‘yxat:\n\n"
             f"👤 {data['first_name']} {data['last_name']}\n"
             f"📱 {data['phone']}\n"
-            f"🆔 ID: {message.from_user.id}"
+            f"🆔 {message.from_user.id}"
         ),
-        reply_markup=kb,
+        reply_markup=kb
     )
 
     await state.clear()
@@ -164,18 +156,16 @@ async def wrong_passport(message: Message):
 @router.callback_query(F.data.startswith("approve:"))
 async def approve_user(call: CallbackQuery):
     user_id = int(call.data.split(":")[1])
-
     await update_user_status(user_id, "approved")
     await call.message.edit_caption(call.message.caption + "\n\n✅ TASDIQLANDI")
     await call.bot.send_message(user_id, "🎉 Siz tasdiqlandingiz!")
-    await call.answer("Tasdiqlandi")
+    await call.answer("OK")
 
 
 @router.callback_query(F.data.startswith("reject:"))
 async def reject_user(call: CallbackQuery):
     user_id = int(call.data.split(":")[1])
-
     await update_user_status(user_id, "rejected")
     await call.message.edit_caption(call.message.caption + "\n\n❌ RAD ETILDI")
     await call.bot.send_message(user_id, "❌ Siz rad etildingiz.")
-    await call.answer("Rad etildi")
+    await call.answer("OK")
