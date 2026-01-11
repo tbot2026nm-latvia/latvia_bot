@@ -70,3 +70,11 @@ async def get_user(user_id):
         return await conn.fetchrow(
             "SELECT * FROM users WHERE telegram_id=$1", user_id
         )
+
+async def get_user(telegram_id):
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT first_name, last_name, phone, status FROM users WHERE telegram_id=$1",
+            telegram_id
+        )
+        return dict(row) if row else None
