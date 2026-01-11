@@ -156,10 +156,24 @@ async def wrong_passport(message: Message):
 @router.callback_query(F.data.startswith("approve:"))
 async def approve_user(call: CallbackQuery):
     user_id = int(call.data.split(":")[1])
+
     await update_user_status(user_id, "approved")
+
     await call.message.edit_caption(call.message.caption + "\n\n✅ TASDIQLANDI")
-    await call.bot.send_message(user_id, "🎉 Siz tasdiqlandingiz!")
-    await call.answer("OK")
+
+    # USERGA MENU YUBORAMIZ
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📊 Navbat qo‘shish", callback_data="open_menu")],
+        [InlineKeyboardButton(text="📄 Profil", callback_data="profile")]
+    ])
+
+    await call.bot.send_message(
+        user_id,
+        "🎉 Siz admin tomonidan tasdiqlandingiz!\n\nEndi monitoringdan foydalanishingiz mumkin.",
+        reply_markup=kb
+    )
+
+    await call.answer("Tasdiqlandi")
 
 
 @router.callback_query(F.data.startswith("reject:"))

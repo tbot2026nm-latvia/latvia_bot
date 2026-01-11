@@ -1,8 +1,20 @@
 from aiogram import Router, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from services.db import pool, is_user_approved
+from aiogram.types import CallbackQuery
+from aiogram import F
 
 router = Router()
+
+@router.callback_query(F.data == "open_menu")
+async def open_menu(call: CallbackQuery):
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📊 Navbat qo‘shish", callback_data="add_menu")],
+        [InlineKeyboardButton(text="📄 Profil", callback_data="profile")]
+    ])
+
+    await call.message.edit_text("📋 Asosiy menyu:", reply_markup=kb)
+    await call.answer()
 
 @router.message(F.text == "📊 Navbat qo‘shish")
 async def add_queue(message: Message):
